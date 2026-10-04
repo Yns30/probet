@@ -177,6 +177,7 @@
       .map((a) => [a[0], a[a.length - 1]]);
     const format = txt(document.querySelector('.preformatted-text'));
     const h2h = document.querySelectorAll('.head-to-head .bold');
+    state.metaAt = Date.now();
     state.meta = {
       team1: {
         name: sbEl?.dataset.team1Name || txt(t1?.querySelector('.teamName')),
@@ -228,6 +229,9 @@
       }
     }
     state.timer = readTimer();
+    // Onglet en arrière-plan : Chrome ralentit les minuteries, on relit donc aussi la page
+    // (probabilité HLTV, maps) à l'arrivée des données live.
+    if (Date.now() - (state.metaAt || 0) > 2000) readMeta();
     push();
   });
 

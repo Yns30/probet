@@ -11,7 +11,7 @@ Page de match HLTV ouverte ──► données live reçues par la page (scorebot
 ```
 
 - **Gratuit, sans compte, sans API, sans proxy.** ProBet n'envoie aucune requête à HLTV : il écoute les données que la page ouverte reçoit déjà pour afficher son scoreboard live.
-- **Plusieurs matchs à la fois :** si plusieurs pages de match sont ouvertes, un menu permet de choisir celui à suivre.
+- **Plusieurs matchs à la fois :** ouvrez une page HLTV par match (dans des onglets ou des fenêtres). Tous les matchs sont analysés et enregistrés dans le journal en parallèle ; le menu en haut du panneau choisit celui qui est affiché. Les onglets peuvent rester en arrière-plan, mais ne les fermez pas et ne mettez pas Chrome en veille.
 
 ## Installation (2 minutes)
 

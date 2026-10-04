@@ -99,7 +99,9 @@ $('matchSelect').addEventListener('change', (e) => {
 function onState(id, state) {
   sources.set(id, state);
   refreshSelect();
+  // Tous les matchs ouverts sont analysés et enregistrés, même ceux qui ne sont pas affichés.
   if (id === selected) render();
+  else if (state?.scoreboard) process(id, state);
 }
 
 if (hasChrome) {
@@ -282,12 +284,7 @@ function facts(m, res, src) {
   return out.slice(0, 5);
 }
 
-function renderPicks(list, conf, mem, m) {
-  mem.picks ??= {};
-  const picks = stablePicks(mem.picks, {
-    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 4,
-    phase: m.phase, round: m.round, mapKey: mem.mapKey,
-  });
+function renderPicks(picks, conf) {
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
   if (!picks.length) {
     $('picks').innerHTML = '<li class="none">Rien d’intéressant pour l’instant : ProBet surveille le match. Entrez les cotes de votre bookmaker dans « Tous les marchés » pour détecter les paris à valeur.</li>';
@@ -353,6 +350,39 @@ function renderFeed(src) {
     .map((l) => `<li class="${l.type === 'RoundEnd' ? 'round' : ''}">${esc(l.text)}</li>`).join('');
 }
 
+// Analyse d'un match (affiché ou non) : probabilités, paris, historique, journal.
+function process(id, src) {
+  const mem = memFor(src.matchId || id);
+  const meta = { ...src.meta, prematchOverride: prematchOverride(), timer: src.timer };
+  // Nouvelle map : on repart d'un historique vierge.
+  const key = `${src.scoreboard.mapName}|${seriesState(meta.maps, src.scoreboard.mapName).mapNumber}`;
+  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; }
+  const m = toMatch(src.scoreboard, meta, mem);
+  const res = analyze(m);
+
+  const pMap = res.over ? (res.over === 'A' ? 1 : 0) : res.pMap;
+  const lbl = `R${res.round} ${m.scoreA}-${m.scoreB}`;
+  const prev = mem.history[mem.history.length - 1];
+  if (!prev || Math.abs(prev.p - pMap) > 0.002 || prev.label !== lbl) mem.history.push({ p: pMap, label: lbl });
+  if (mem.history.length > 500) mem.history.shift();
+
+  const list = markets(res, m.names, m);
+  const conf = confidence(res, 0.95, m.rounds.length);
+  mem.picks ??= {};
+  const picks = stablePicks(mem.picks, {
+    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 4,
+    phase: m.phase, round: m.round, mapKey: mem.mapKey,
+  });
+  if (src.matchId && src.matchId !== 'demo') {
+    const jkey = `${src.matchId}|${key}`;
+    record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
+    backfill(journal, src.matchId, src.meta?.maps);
+    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB });
+    for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
+  }
+  return { mem, m, res, list, conf, picks };
+}
+
 function render() {
   const src = sources.get(selected);
   if (!src) {
@@ -372,20 +402,7 @@ function render() {
   if (age != null && age > 90) status('paused', `Pas de nouvelle donnée depuis ${age} s (pause, mi-temps ?)`);
   else status('live', `En direct · ${label(src)}`);
 
-  const mem = memFor(src.matchId || selected);
-  const meta = { ...src.meta, prematchOverride: prematchOverride(), timer: src.timer };
-  // Nouvelle map : on repart d'un historique vierge.
-  const key = `${src.scoreboard.mapName}|${seriesState(meta.maps, src.scoreboard.mapName).mapNumber}`;
-  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; }
-  const m = toMatch(src.scoreboard, meta, mem);
-  const res = analyze(m);
-
-  const pMap = res.over ? (res.over === 'A' ? 1 : 0) : res.pMap;
-  const lbl = `R${res.round} ${m.scoreA}-${m.scoreB}`;
-  const prev = mem.history[mem.history.length - 1];
-  if (!prev || Math.abs(prev.p - pMap) > 0.002 || prev.label !== lbl) mem.history.push({ p: pMap, label: lbl });
-  if (mem.history.length > 500) mem.history.shift();
-
+  const { mem, m, res, list, conf, picks } = process(selected, src);
   renderBoard(m);
   renderProbs(m, res, src);
   sparkData = { history: mem.history, name: m.names[0] };
@@ -393,16 +410,7 @@ function render() {
   $('facts').innerHTML = facts(m, res, src).map((f) => `<li>${esc(f)}</li>`).join('');
   renderFeed(src);
   renderPre(m, src);
-  const list = markets(res, m.names, m);
-  const conf = confidence(res, 0.95, m.rounds.length);
-  const picks = renderPicks(list, conf, mem, m);
-  if (src.matchId && src.matchId !== 'demo') {
-    const jkey = `${src.matchId}|${key}`;
-    record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
-    backfill(journal, src.matchId, src.meta?.maps);
-    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB });
-    for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
-  }
+  renderPicks(picks, conf);
   renderMarkets(list, mem);
 }
 

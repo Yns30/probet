@@ -42,7 +42,7 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 | Stats avancées de chaque joueur (K-D, KAST, ADR, assists) + rating 3 mois | Niveau de chaque survivant dans les clutchs (forme du jour mélangée au niveau habituel) ; meilleur joueur de la map |
 | Chrono du round, équipement officiel de début de round | Pression sur les T en fin de round ; type d'achat exact (eco / force / full) et achat probable au round suivant selon l'issue |
 | Armes et argent | Type d'achat du round (eco / force / demi / full) et achat probable au round suivant |
-| Probabilité live affichée par HLTV | Comparaison avec ProBet ; les écarts importants sont signalés |
+| Probabilité live affichée par HLTV (widget « Live win probability ») | Comparée ligne à ligne avec ProBet : équipe 1 dans le temps réglementaire, prolongation, équipe 2 ; un écart de 10 points ou plus est signalé |
 
 **Avant-match (lu sur la page, section « Avant-match » du panneau) :**
 
@@ -67,6 +67,12 @@ Dans **Réglages** : bankroll, avantage minimum exigé pour un pari VALUE, et co
 
 - **« En attente des données live »** : le match n'a peut-être pas commencé. Sinon, rechargez la page HLTV : l'extension doit être chargée avant le scoreboard.
 - **Une donnée semble fausse ou rien ne s'affiche :** dans **Réglages**, cliquez sur **Copier le diagnostic**, puis collez-le dans une conversation. Il contient ce que ProBet a reçu de la page, de quoi l'adapter si HLTV change sa structure.
+
+## Calibrage
+
+Les paramètres du modèle (`CAL` dans `extension/engine.js`) sont vérifiés sur des situations réelles où HLTV affichait sa propre probabilité (`test/calibration.test.js`). Exemple : Vitality-NaVi sur Anubis, à 4-0 ProBet donne 87 % (HLTV 87,4 %) et à 10-4 ProBet donne 98,8 % (HLTV 94,2 % + 4,5 % de prolongation).
+
+Le modèle tient compte du fait que les rounds s'enchaînent par séries : le vainqueur d'un round garde l'avantage économique au suivant. Sans cela, une avance au score paraîtrait plus définitive qu'elle ne l'est.
 
 ## Limites
 

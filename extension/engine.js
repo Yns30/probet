@@ -16,6 +16,15 @@ export const MAPS = {
 };
 const DEFAULT_CT = 0.51;
 
+// Paramètres de calibrage (voir test/calibration.test.js).
+//  - roundWeight : poids d'un round observé dont on ne connaît pas l'économie. Les rounds
+//    s'enchaînent par séries (économie), ils valent moins qu'une observation indépendante.
+//  - priorSd* : incertitude de départ sur l'écart de niveau (logit par round).
+//  - seriesWeight : poids des rounds des maps précédentes de la série.
+//  - carry : avantage du vainqueur du round précédent (argent, armes gardées) hors pistols
+//    et remises à zéro ; il crée les séries de rounds observées en pro.
+export const CAL = { carry: 0.35, roundWeight: 0.6, priorSdOdds: 0.18, priorSdPage: 0.22, priorSdNone: 0.28, seriesWeight: 0.35 };
+
 const BUY_STRENGTH = { eco: 0, force: 1.1, half: 1.6, full: 2.5 };
 
 export const sig = (x) => 1 / (1 + Math.exp(-x));
@@ -88,6 +97,8 @@ export function roundLogit(r, ctx) {
   }
   if (ctx.econ && ctx.econ.A != null && ctx.econ.B != null) {
     x += 0.55 * (BUY_STRENGTH[ctx.econ.A] - BUY_STRENGTH[ctx.econ.B]);
+  } else if (ctx.last && posInHalf(r) >= (isRegulation(r) ? 4 : 2)) {
+    x += ctx.last === 'A' ? CAL.carry : -CAL.carry; // économie du vainqueur précédent
   }
   return x;
 }
@@ -180,14 +191,14 @@ const MAX_OT_BLOCKS = 6;
 // Retourne Map "a-b" -> probabilité.
 export function finalDistribution(a, b, opts) {
   const { map, d, refRound, refSide } = opts;
-  let states = new Map([[`${a}|${b}|${opts.hist?.pw || ''}|${opts.hist?.r2 || ''}`, 1]]);
+  let states = new Map([[`${a}|${b}|${opts.hist?.pw || ''}|${opts.hist?.r2 || ''}|${opts.last || ''}`, 1]]);
   const out = new Map();
   const limit = 24 + 6 * MAX_OT_BLOCKS;
   const first = a + b + 1;
   while (states.size) {
     const next = new Map();
     for (const [key, mass] of states) {
-      const [sa, sb, pw, r2] = key.split('|');
+      const [sa, sb, pw, r2, lw] = key.split('|');
       const ca = +sa, cb = +sb;
       const r = ca + cb + 1;
       if (r > limit) { // queue de distribution négligeable : on tranche à 50/50
@@ -198,7 +209,7 @@ export function finalDistribution(a, b, opts) {
       }
       const hist = { pw: pw || undefined, r2: r2 || undefined };
       const econ = r === first ? opts.econ : undefined; // achat connu du premier round simulé
-      const p = sig(roundLogit(r, { map, d, aSide: sideAt(r, refRound, refSide), hist, econ }));
+      const p = sig(roundLogit(r, { map, d, aSide: sideAt(r, refRound, refSide), hist, econ, last: lw || undefined }));
       for (const [w, pm] of [['A', p], ['B', 1 - p]]) {
         const na = ca + (w === 'A'), nb = cb + (w === 'B');
         const m = mass * pm;
@@ -207,7 +218,7 @@ export function finalDistribution(a, b, opts) {
           out.set(k, (out.get(k) || 0) + m);
         } else {
           const h = nextHist(r, hist, w);
-          const nk = `${na}|${nb}|${h.pw || ''}|${h.r2 || ''}`;
+          const nk = `${na}|${nb}|${h.pw || ''}|${h.r2 || ''}|${w}`;
           next.set(nk, (next.get(nk) || 0) + m);
         }
       }
@@ -263,11 +274,11 @@ export function mapProbFromSeries(pSeries, bestOf) {
 
 const priorCache = new Map();
 export function priorD(prematchMapProb, map) {
-  if (prematchMapProb == null) return { mean: 0, sd: 0.45 };
+  if (prematchMapProb == null) return { mean: 0, sd: CAL.priorSdNone };
   const p = clamp(prematchMapProb, 0.03, 0.97);
   const key = `${p.toFixed(3)}|${normalizeMap(map)}`;
   if (!priorCache.has(key)) priorCache.set(key, invert((d) => mapProbFromD(d, map), p, -3, 3));
-  return { mean: priorCache.get(key), sd: 0.3 };
+  return { mean: priorCache.get(key), sd: CAL.priorSdOdds };
 }
 
 // rounds : [{ r, winner: 'A'|'B', aSide: 'CT'|'T'|null, hist, econ }]
@@ -278,11 +289,11 @@ export function posterior(rounds, prior, map) {
       if (o.wins != null) {
         // Observation agrégée (moitié de map déjà jouée) : o.wins rounds gagnés par A sur o.n.
         const p = sig(roundLogit(99, { map: o.map ?? map, d, aSide: o.aSide }));
-        ll += (o.weight ?? 1) * (o.wins * Math.log(p) + (o.n - o.wins) * Math.log(1 - p));
+        ll += (o.weight ?? CAL.seriesWeight) * (o.wins * Math.log(p) + (o.n - o.wins) * Math.log(1 - p));
         continue;
       }
-      const p = sig(roundLogit(o.r, { map, d, aSide: o.aSide, hist: o.hist, econ: o.econ }));
-      ll += Math.log(o.winner === 'A' ? p : 1 - p);
+      const p = sig(roundLogit(o.r, { map, d, aSide: o.aSide, hist: o.hist, econ: o.econ, last: o.last }));
+      ll += (o.econ ? 1 : CAL.roundWeight) * Math.log(o.winner === 'A' ? p : 1 - p);
     }
     return ll;
   });
@@ -310,6 +321,8 @@ export function analyze(match) {
   const hist = match.hist || {};
   const econ = match.buyA && match.buyB ? { A: match.buyA, B: match.buyB } : null;
   const over = mapWinner(a, b);
+  const prev = (match.rounds || [])[(match.rounds || []).length - 1];
+  const last = prev && !prev.synthetic ? prev.winner : undefined;
 
   const final = new Map();
   let pRound = null;
@@ -318,7 +331,7 @@ export function analyze(match) {
   } else {
     let pr = 0;
     for (const { d, w } of post.support) {
-      const base = { map, d, x: roundLogit(r, { map, d, aSide, hist, econ }) };
+      const base = { map, d, x: roundLogit(r, { map, d, aSide, hist, econ, last }) };
       const live = phase === 'live' || phase === 'bomb_planted';
       const p = live ? liveRoundProb({ ...match, aSide }, base) : sig(base.x);
       pr += w * p;
@@ -330,7 +343,7 @@ export function analyze(match) {
           final.set(k, (final.get(k) || 0) + w * pw);
           continue;
         }
-        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win), econ: match.nextEcon?.[win] });
+        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win), econ: match.nextEcon?.[win], last: win });
         for (const [k, m] of dist) final.set(k, (final.get(k) || 0) + w * pw * m);
       }
     }
@@ -338,12 +351,14 @@ export function analyze(match) {
   }
 
   // Agrégats
-  let pMap = 0, pOT = 0;
+  let pMap = 0, pOT = 0, pRegA = 0, pRegB = 0;
   const totals = new Map(), margins = new Map();
   for (const [k, m] of final) {
     const [x, y] = k.split('-').map(Number);
     if (x > y) pMap += m;
     if (x + y > 24) pOT += m;
+    else if (x > y) pRegA += m;
+    else pRegB += m;
     totals.set(x + y, (totals.get(x + y) || 0) + m);
     margins.set(x - y, (margins.get(x - y) || 0) + m);
   }
@@ -365,7 +380,7 @@ export function analyze(match) {
 
   const expTotal = [...totals].reduce((s, [t, m]) => s + t * m, 0);
   return {
-    round: r, over, pRound, pMap, pOT, pSeries, expTotal,
+    round: r, over, pRound, pMap, pOT, pRegA, pRegB, pSeries, expTotal,
     strength: { mean: post.mean, sd: post.sd, prior: prior.mean },
     totals: Object.fromEntries(totals), pOver, pCover,
     likelyScores: [...final].sort((x, y) => y[1] - x[1]).slice(0, 5),

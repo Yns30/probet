@@ -6,7 +6,7 @@
 //    de la page) : joueurs en vie, PV, argent, armes, historique des rounds, bombe…
 //  - "log" : fil des événements (kills, bombe, fin de round).
 //  - meta : éléments lus dans le DOM de la page (équipes, format, maps, cotes).
-import { sideAt, nextHist, normalizeMap, mapWinner, mapProbFromSeries, priorD, sig, logit } from './engine.js';
+import { sideAt, nextHist, normalizeMap, mapWinner, mapProbFromSeries, priorD, sig, logit, CAL } from './engine.js';
 
 // ---------- Extraction des messages du scorebot ----------
 
@@ -262,7 +262,7 @@ export function seriesObs(maps, liveMap) {
     for (const h of mp.halves || []) {
       const n = h.s1 + h.s2;
       if (n > 0 && (h.side1 === 'CT' || h.side1 === 'T')) {
-        out.push({ wins: h.s1, n, aSide: h.side1, map: normalizeMap(mp.name), weight: 0.6 });
+        out.push({ wins: h.s1, n, aSide: h.side1, map: normalizeMap(mp.name) });
       }
     }
   }
@@ -322,7 +322,8 @@ export function toMatch(sb, meta = {}, mem = {}) {
   }
   let hist = {};
   if (complete && rounds.filter((o) => o.winner === 'A').length === scoreA) {
-    for (const o of rounds) { o.hist = { ...hist }; hist = nextHist(o.r, hist, o.winner); }
+    let prev;
+    for (const o of rounds) { o.hist = { ...hist }; o.last = prev; hist = nextHist(o.r, hist, o.winner); prev = o.winner; }
   } else {
     // Historique incomplet : on garde le décompte, sans les côtés.
     rounds = [];
@@ -373,7 +374,7 @@ export function toMatch(sb, meta = {}, mem = {}) {
   const { mapsA, mapsB, mapNumber } = seriesState(meta.maps, sb.mapName);
   const bestOf = meta.bestOf || 1;
   const pre = pagePrior(meta, sb.mapName, bestOf);
-  const prior = pre ? { ...priorD(pre.pMap, sb.mapName), sd: pre.fromOdds ? 0.3 : 0.38 } : null;
+  const prior = pre ? { ...priorD(pre.pMap, sb.mapName), sd: pre.fromOdds ? CAL.priorSdOdds : CAL.priorSdPage } : null;
 
   return {
     map: normalizeMap(sb.mapName) || (sb.mapName ? String(sb.mapName).replace(/^de_/, '') : null),

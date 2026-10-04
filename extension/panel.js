@@ -161,9 +161,14 @@ function renderProbs(m, res, src) {
   let html = '';
   if (res.pRound != null) html += bar(`Round ${res.round}`, res.pRound, m.names);
   const hp = validHltv(src.meta?.hltvProb);
-  const ref = !hp ? '' : hp.oriented === false
-    ? `Proba live affichée par HLTV : ${pct(hp.p1)} / ${pct(hp.p2)} (équipes non identifiées)`
-    : `Proba live affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)} · ${esc(m.names[1])} ${pct(hp.p2)}`;
+  const fmt = (a, ot, b) => `${esc(m.names[0])} ${pct(a)} · prolong. ${pct(ot)} · ${esc(m.names[1])} ${pct(b)}`;
+  let ref = '';
+  if (hp && hp.reg1 != null && !res.over) {
+    ref = `HLTV : ${hp.oriented ? fmt(hp.reg1, hp.ot, hp.reg2) : `${pct(hp.reg1)} / ${pct(hp.reg2)} (équipes non identifiées)`}<br>ProBet : ${fmt(res.pRegA, res.pOT, res.pRegB)}`;
+  } else if (hp) {
+    ref = hp.oriented === false ? `Proba live affichée par HLTV : ${pct(hp.p1)} / ${pct(hp.p2)}`
+      : `Proba live affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)} · ${esc(m.names[1])} ${pct(hp.p2)}`;
+  }
   html += bar(`Map ${m.mapNumber}`, res.over ? (res.over === 'A' ? 1 : 0) : res.pMap, m.names, ref);
   if (res.pSeries != null) html += bar(`Série BO${m.bestOf}`, res.pSeries, m.names);
   $('bars').innerHTML = html;
@@ -232,6 +237,10 @@ function facts(m, res, src) {
   if (m.scoreA + m.scoreB >= 5 && all.length) {
     const best = all.sort((x, y) => y.rating - x.rating)[0];
     out.push(`Meilleur joueur de la map : ${best.nick} (${best.t}) ${best.score}-${best.deaths}, ${Math.round(best.damagePrRound || 0)} ADR, rating ${best.rating.toFixed(2)}`);
+  }
+  const hl = validHltv(src.meta?.hltvProb);
+  if (hl && hl.oriented && hl.reg1 != null && !res.over && Math.abs(hl.p1 - res.pMap) >= 0.1) {
+    out.push(`Écart avec HLTV sur la map : ${A} ${pct(res.pMap)} (ProBet) contre ${pct(hl.p1)} (HLTV) — prudence`);
   }
   for (const f of m.facts || []) out.push(`HLTV : ${f}`);
   return out.slice(0, 5);

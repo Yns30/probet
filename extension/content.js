@@ -27,7 +27,30 @@
   // Probabilité live affichée par HLTV. L'ordre des pourcentages dans le widget ne suit pas
   // forcément équipe 1 / équipe 2 : chaque pourcentage est rattaché au nom ou logo d'équipe
   // le plus proche qui le précède (ou le suit) dans le widget.
+  // Widget "Live win probability" (.win-o-meter) : chaque équipe (logo + %) et le segment
+  // prolongation (OT). Probabilités de gagner la map dans le temps réglementaire.
+  function winOMeter() {
+    const meter = document.querySelector('.win-o-meter');
+    if (!meter) return null;
+    const n1 = (state.meta?.team1?.name || '').toLowerCase(), n2 = (state.meta?.team2?.name || '').toLowerCase();
+    const num = (t) => { const m = /(\d+(?:[.,]\d+)?)\s*%/.exec(t || ''); return m ? parseFloat(m[1].replace(',', '.')) / 100 : null; };
+    const teams = [...meter.querySelectorAll('.win-o-meter-team')].map((t) => {
+      const img = t.querySelector('img');
+      return { name: (img?.title || img?.alt || t.textContent || '').trim().toLowerCase(), v: num(t.querySelector('span')?.textContent) };
+    });
+    if (teams.length < 2 || teams.some((t) => t.v == null)) return null;
+    const otEl = meter.querySelector('.win-o-meter-line.ot');
+    const ot = num(otEl?.querySelector('.offset-ot-2')?.textContent) ?? num(otEl?.style.width) ?? Math.max(0, 1 - teams[0].v - teams[1].v);
+    const i1 = teams.findIndex((t) => n1 && t.name === n1), i2 = teams.findIndex((t) => n2 && t.name === n2);
+    const oriented = i1 >= 0 || i2 >= 0;
+    const t1 = i1 >= 0 ? teams[i1] : i2 >= 0 ? teams[1 - i2] : teams[0];
+    const t2 = teams.find((t) => t !== t1);
+    return { reg1: t1.v, reg2: t2.v, ot, p1: t1.v + ot / 2, p2: t2.v + ot / 2, oriented, html: meter.outerHTML.slice(0, 2500) };
+  }
+
   function hltvWinProb() {
+    const w = winOMeter();
+    if (w) return w;
     const t1 = (state.meta?.team1?.name || document.querySelector('#scoreboardElement')?.dataset.team1Name || '').toLowerCase();
     const t2 = (state.meta?.team2?.name || document.querySelector('#scoreboardElement')?.dataset.team2Name || '').toLowerCase();
     const labels = [...document.querySelectorAll('div, span, h2, h3')]

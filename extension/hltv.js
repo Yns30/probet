@@ -6,7 +6,7 @@
 //    de la page) : joueurs en vie, PV, argent, armes, historique des rounds, bombe…
 //  - "log" : fil des événements (kills, bombe, fin de round).
 //  - meta : éléments lus dans le DOM de la page (équipes, format, maps, cotes).
-import { sideAt, nextHist, normalizeMap, mapWinner, mapProbFromSeries } from './engine.js';
+import { sideAt, nextHist, normalizeMap, mapWinner, mapProbFromSeries, priorD, sig, logit } from './engine.js';
 
 // ---------- Extraction des messages du scorebot ----------
 
@@ -142,6 +142,68 @@ export function oddsToProb(rows) {
   return ps.reduce((s, p) => s + p, 0) / ps.length;
 }
 
+// ---------- Force d'avant-match (données de la page) ----------
+
+const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
+// Taux de victoire sur une map, rétréci vers 50 % selon le nombre de maps jouées.
+const shrunk = (w, n) => (w != null && n ? logit(clamp((w * n + 0.5 * 6) / (n + 6), 0.05, 0.95)) : null);
+
+// Probabilité que l'équipe 1 gagne la série / la map en cours, avant les rounds joués.
+// Sources, par ordre de fiabilité : cotes des bookmakers, points VRS (sinon classement HLTV),
+// ratings des joueurs sur 3 mois, puis ajustement selon les stats de la map jouée.
+export function pagePrior(meta = {}, mapName, bestOf = 1) {
+  const t1 = meta.team1 || {}, t2 = meta.team2 || {};
+  const parts = [], sources = [];
+  if (t1.vrs && t2.vrs) {
+    const x = (t1.vrs - t2.vrs) / 800 * Math.LN10;
+    parts.push({ x, w: 1 });
+    sources.push(`Points VRS : ${t1.vrs} contre ${t2.vrs}`);
+  } else if (t1.rank && t2.rank) {
+    parts.push({ x: 0.6 * Math.log(t2.rank / t1.rank), w: 1 });
+    sources.push(`Classement HLTV : #${t1.rank} contre #${t2.rank}`);
+  }
+  if (t1.rating && t2.rating) {
+    parts.push({ x: clamp((t1.rating - t2.rating) * 3, -0.6, 0.6), w: 0.35 });
+    sources.push(`Rating moyen 3 mois : ${t1.rating.toFixed(2)} contre ${t2.rating.toFixed(2)}`);
+  }
+  const pOdds = meta.prematchOverride ?? oddsToProb(meta.odds);
+  let xSeries = null;
+  if (parts.length) xSeries = parts.reduce((t, p) => t + p.x * p.w, 0) / parts.reduce((t, p) => t + p.w, 0);
+  if (pOdds != null) {
+    const xo = logit(clamp(pOdds, 0.02, 0.98));
+    xSeries = xSeries == null ? xo : 0.75 * xo + 0.25 * xSeries;
+    sources.unshift(meta.prematchOverride != null ? 'Vos cotes d’avant-match' : `Cotes des bookmakers (${meta.odds.length})`);
+  }
+  if (xSeries == null) return null;
+  const pSeries = sig(xSeries);
+  let xMap = logit(clamp(bestOf > 1 ? mapProbFromSeries(pSeries, bestOf) : pSeries, 0.02, 0.98));
+  const ms = meta.mapStats?.[normalizeMap(mapName)];
+  if (ms) {
+    const a = shrunk(ms.w1, ms.n1), b = shrunk(ms.w2, ms.n2);
+    if (a != null && b != null) {
+      xMap += 0.5 * (a - b);
+      sources.push(`${normalizeMap(mapName)} sur 3 mois : ${Math.round(ms.w1 * 100)} % (${ms.n1} maps) contre ${Math.round(ms.w2 * 100)} % (${ms.n2} maps)`);
+    }
+  }
+  return { pSeries, pMap: sig(xMap), sources, fromOdds: pOdds != null };
+}
+
+// Rounds des maps déjà terminées de la série, mi-temps par mi-temps (côté connu).
+export function seriesObs(maps, liveMap) {
+  const out = [];
+  for (const mp of maps || []) {
+    if (!mapWinner(mp.s1 ?? 0, mp.s2 ?? 0)) continue;
+    if (liveMap && normalizeMap(mp.name) === normalizeMap(liveMap) && !mp.halves?.length) continue;
+    for (const h of mp.halves || []) {
+      const n = h.s1 + h.s2;
+      if (n > 0 && (h.side1 === 'CT' || h.side1 === 'T')) {
+        out.push({ wins: h.s1, n, aSide: h.side1, map: normalizeMap(mp.name), weight: 0.6 });
+      }
+    }
+  }
+  return out;
+}
+
 // ---------- Scoreboard → entrée du moteur ----------
 
 // L'équipe actuellement CT est-elle l'équipe 1 de la page (= "A") ?
@@ -216,13 +278,18 @@ export function toMatch(sb, meta = {}, mem = {}) {
   const live = phase === 'live' || phase === 'bomb_planted' || phase === 'freezetime';
   const nextRound = phase === 'round_over';
 
-  // Achat du round : figé à la fin du temps d'achat (les morts perdent leur arme ensuite).
+  // Achat du round : figé au temps d'achat. Si le panneau arrive en cours de round, on ne
+  // regarde que les survivants (les morts ont perdu leur arme).
   let buyA = null, buyB = null;
   if (live) {
     const lock = mem.econ?.[current];
-    if (phase === 'freezetime' || !lock) {
-      buyA = buyType(pA); buyB = buyType(pB);
-      if (mem.econ && buyA && buyB) mem.econ[current] = { A: buyA, B: buyB };
+    if (phase === 'freezetime' || !lock || !lock.final) {
+      const frozen = phase === 'freezetime';
+      const aA = frozen ? pA : pA.filter((p) => p.alive), aB = frozen ? pB : pB.filter((p) => p.alive);
+      buyA = buyType(aA) ?? lock?.A ?? null;
+      buyB = buyType(aB) ?? lock?.B ?? null;
+      if (mem.econ && buyA && buyB && (!lock || frozen)) mem.econ[current] = { A: buyA, B: buyB, final: frozen };
+      else if (lock && !frozen) { buyA = lock.A; buyB = lock.B; }
     } else {
       buyA = lock.A; buyB = lock.B;
     }
@@ -232,7 +299,8 @@ export function toMatch(sb, meta = {}, mem = {}) {
 
   const { mapsA, mapsB, mapNumber } = seriesState(meta.maps, sb.mapName);
   const bestOf = meta.bestOf || 1;
-  const pSeries = meta.prematchOverride ?? oddsToProb(meta.odds);
+  const pre = pagePrior(meta, sb.mapName, bestOf);
+  const prior = pre ? { ...priorD(pre.pMap, sb.mapName), sd: pre.fromOdds ? 0.3 : 0.38 } : null;
 
   return {
     map: normalizeMap(sb.mapName) || (sb.mapName ? String(sb.mapName).replace(/^de_/, '') : null),
@@ -244,11 +312,11 @@ export function toMatch(sb, meta = {}, mem = {}) {
     hpB: live ? sum(pB.filter((p) => p.alive), (p) => p.hp || 0) : null,
     moneyA: sum(pA, (p) => p.money || 0), moneyB: sum(pB, (p) => p.money || 0),
     bombPlanted: Boolean(sb.bombPlanted),
-    timer: null, buyA, buyB, nextBuy: nextRound,
+    timer: phase === 'live' && Number.isInteger(meta.timer) ? meta.timer : null,
+    buyA, buyB, nextBuy: nextRound,
     rounds, hist, bestOf, mapsA, mapsB, mapNumber,
-    prematchSeries: pSeries,
-    prematchMapProb: pSeries != null ? mapProbFromSeries(pSeries, bestOf) : null,
-    players: { A: pA, B: pB },
+    pre, prior, seriesObs: seriesObs(meta.maps, sb.mapName),
+    players: { A: pA, B: pB }, playersA: live ? pA : null, playersB: live ? pB : null,
   };
 }
 

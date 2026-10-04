@@ -31,16 +31,28 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 
 ## Ce que ProBet analyse
 
+**En direct (scorebot de la page) :**
+
 | Donnée HLTV | Utilisation |
 |---|---|
 | Score, round, côtés CT/T, map | Calcul exact jusqu'à la fin de la map (MR12 + prolongations MR3), avec l'avantage CT/T propre à chaque map |
 | Historique des rounds | Force relative des équipes, mise à jour après chaque round ; effet pistol / anti-eco |
-| Joueurs en vie et **points de vie** | Probabilité du round en cours (un 3v2 à 20 PV ne vaut pas un 3v2 à 100 PV) |
-| Bombe posée | Probabilité post-plant (retake / défense de la bombe) |
-| Armes, armures, argent | Type d'achat (eco / force / full) du round, et achat probable au round suivant |
-| Cotes des bookmakers affichées par HLTV | Force des équipes avant les premiers rounds (marge retirée) |
-| Maps déjà jouées, format BO1/BO3/BO5 | Probabilité de gagner la série |
+| Pour chaque survivant : **PV, arme, armure, kit** | Probabilité du round en cours. Un 4v1 avec 6 PV et un pistolet ne vaut pas un 4v1 en pleine santé. La courbe est calée sur les taux pro : 5v4 ≈ 71 %, 5v3 ≈ 86 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % |
+| Bombe posée, kit de désamorçage | Probabilité post-plant (retake / défense de la bombe) |
+| Chrono du round | Pression sur les T en fin de round |
+| Armes et argent | Type d'achat du round (eco / force / demi / full) et achat probable au round suivant |
 | Probabilité live affichée par HLTV | Comparaison avec ProBet ; les écarts importants sont signalés |
+
+**Avant-match (lu sur la page, section « Avant-match » du panneau) :**
+
+| Donnée HLTV | Utilisation |
+|---|---|
+| Cotes des bookmakers (si affichées) | Source principale de la force des équipes (marge retirée) |
+| Points VRS (sinon classement HLTV) | Force des équipes quand il n'y a pas de cotes (HLTV masque les cotes en France) |
+| Rating moyen des joueurs sur 3 mois | Ajustement léger |
+| Taux de victoire sur la map jouée (3 mois) | Ajustement spécifique à la map, pondéré par le nombre de maps jouées |
+| Maps déjà jouées dans la série, **mi-temps par mi-temps** | Preuve directe de l'écart entre les équipes (avec le côté CT/T de chaque moitié) |
+| Format BO1/BO3/BO5, maps gagnées | Probabilité de gagner la série |
 
 ## Marchés calculés
 
@@ -68,10 +80,10 @@ extension/
   manifest.json   déclaration de l'extension (Chrome/Edge, Manifest V3)
   hook.js         écoute les messages live reçus par la page HLTV (sans requête supplémentaire)
   content.js      lit la page (équipes, format, maps, cotes) et transmet au panneau
-  hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases)
+  hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases, avant-match)
   engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)
   background.js   ouvre le panneau au clic sur l'icône
-test/             tests (npm test, Node 20+)
+test/             tests (npm test, Node 20+) ; test/fixtures : extrait réel d'une page de match HLTV
 ```

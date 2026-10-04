@@ -103,7 +103,27 @@ export function nextHist(r, hist, winner) {
 
 // ---------- Round en cours (live) ----------
 
-// s : { aSide, aliveA, aliveB, hpA, hpB, bombPlanted, timer, buyA, buyB, phase }
+// Force d'un joueur en vie, en "unités" (1 = fusil, 100 PV, casque).
+const norm = (w) => String(w || '').toLowerCase().replace(/^weapon_/, '').replace(/[^a-z0-9]/g, '');
+const WEAPONS = {
+  awp: 1.12, ak47: 1, m4a1: 1, m4a1silencer: 1, m4a4: 1, aug: 1, sg556: 1, sg553: 1, scar20: 1, g3sg1: 1,
+  famas: 0.92, galilar: 0.92, galil: 0.92, ssg08: 0.85, m249: 0.85, negev: 0.85,
+  mp9: 0.8, mac10: 0.8, mp7: 0.8, mp5sd: 0.8, ump45: 0.8, p90: 0.82, bizon: 0.78,
+  nova: 0.75, xm1014: 0.78, mag7: 0.75, sawedoff: 0.72, deagle: 0.7, revolver: 0.68,
+};
+export const weaponFactor = (w) => WEAPONS[norm(w)] ?? 0.62; // sinon : pistolet
+export function playerUnit(p) {
+  const hp = clamp(p.hp ?? 100, 1, 100);
+  const armor = p.helmet ? 1 : p.kevlar ? 0.95 : 0.85;
+  return (0.35 + 0.65 * hp / 100) * weaponFactor(p.primaryWeapon) * armor;
+}
+const units = (players) => (players || []).filter((p) => p.alive !== false).reduce((t, p) => t + playerUnit(p), 0);
+
+// Avantage numérique → logit. Calé sur les taux pro : 5v4 ≈ 71 %, 5v3 ≈ 86 %,
+// 4v2 ≈ 87 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % (chaque joueur supplémentaire pèse davantage).
+const curve = (D) => 0.85 * D + 0.05 * D * Math.abs(D);
+
+// s : { aSide, aliveA, aliveB, playersA, playersB, hpA, hpB, bombPlanted, timer, buyA, buyB }
 export function liveRoundProb(s, base) {
   const ctSideA = s.aSide === 'CT';
   const aliveCT = ctSideA ? s.aliveA : s.aliveB;
@@ -111,30 +131,35 @@ export function liveRoundProb(s, base) {
   const pFromCT = (p) => (ctSideA ? p : 1 - p);
 
   if (s.aSide == null || aliveCT == null || aliveT == null) return sig(base.x);
-  if (aliveCT === 0) return pFromCT(0.005);
-  if (aliveT === 0 && !s.bombPlanted) return pFromCT(0.995);
+  if (aliveCT === 0) return pFromCT(0.003);
+  if (aliveT === 0 && !s.bombPlanted) return pFromCT(0.997);
 
   const ct = ctRate(base.map);
-  const dCT = (ctSideA ? 1 : -1) * (base.d || 0) * 0.6;
-  let econ = 0;
-  if (s.buyA && s.buyB && BUY_STRENGTH[s.buyA] != null && BUY_STRENGTH[s.buyB] != null) {
-    const e = 0.45 * (BUY_STRENGTH[s.buyA] - BUY_STRENGTH[s.buyB]);
-    econ = (ctSideA ? e : -e) * ((aliveCT + aliveT) / 10);
+  const dCT = (ctSideA ? 1 : -1) * (base.d || 0) * 0.5;
+  const plCT = ctSideA ? s.playersA : s.playersB, plT = ctSideA ? s.playersB : s.playersA;
+  let uCT, uT, econ = 0;
+  if (plCT?.length && plT?.length) {
+    uCT = units(plCT); uT = units(plT); // armes, armures et PV de chaque survivant
+  } else {
+    const hpCT = ctSideA ? s.hpA : s.hpB, hpT = ctSideA ? s.hpB : s.hpA;
+    const eff = (n, hp) => (hp != null ? 0.35 * n + 0.65 * Math.min(hp, 100 * n) / 100 : n);
+    uCT = eff(aliveCT, hpCT); uT = eff(aliveT, hpT);
+    if (s.buyA && s.buyB && BUY_STRENGTH[s.buyA] != null && BUY_STRENGTH[s.buyB] != null) {
+      const e = 0.45 * (BUY_STRENGTH[s.buyA] - BUY_STRENGTH[s.buyB]);
+      econ = (ctSideA ? e : -e) * ((aliveCT + aliveT) / 10);
+    }
   }
-  // Avec les PV connus (scorebot HLTV), un joueur à 20 PV compte moins qu'un joueur à 100.
-  const hpCT = ctSideA ? s.hpA : s.hpB, hpT = ctSideA ? s.hpB : s.hpA;
-  const eff = (n, hp) => (hp != null && n > 0 ? 0.55 * n + 0.45 * Math.min(hp, 100 * n) / 100 : n);
-  const diff = eff(aliveCT, hpCT) - eff(aliveT, hpT);
-  const scale = Math.sqrt(5 / Math.max(aliveCT, aliveT, 1));
+  const D = uCT - uT;
+  const kit = (plCT || []).some((p) => p.alive !== false && p.hasDefuseKit);
   let x;
   if (s.bombPlanted) {
-    if (aliveT === 0) x = -0.3 + 0.35 * (aliveCT - 1); // défuse sous pression
-    else x = -1.0 + 0.7 * diff * scale;
+    if (aliveT === 0) x = (kit ? 0.9 : -0.2) + 0.35 * (aliveCT - 1); // défuse contre la montre
+    else x = -0.75 + 0.9 * curve(D) + (kit ? 0.3 : 0);
   } else {
-    x = logit(ct) + 0.65 * diff * scale;
-    if (s.timer != null && s.timer < 30) x += (30 - s.timer) * 0.07; // les T doivent poser
+    x = 0.5 * logit(ct) + curve(D);
+    if (s.timer != null && s.timer < 30) x += (30 - s.timer) * 0.06; // les T doivent poser
   }
-  return pFromCT(clamp(sig(x + dCT + econ), 0.01, 0.99));
+  return pFromCT(clamp(sig(x + dCT + econ), 0.003, 0.997));
 }
 
 // ---------- Propagation exacte des scores ----------
@@ -238,6 +263,12 @@ export function posterior(rounds, prior, map) {
   const w = GRID.map((d) => {
     let ll = -0.5 * ((d - prior.mean) / prior.sd) ** 2;
     for (const o of rounds) {
+      if (o.wins != null) {
+        // Observation agrégée (moitié de map déjà jouée) : o.wins rounds gagnés par A sur o.n.
+        const p = sig(roundLogit(99, { map: o.map ?? map, d, aSide: o.aSide }));
+        ll += (o.weight ?? 1) * (o.wins * Math.log(p) + (o.n - o.wins) * Math.log(1 - p));
+        continue;
+      }
       const p = sig(roundLogit(o.r, { map, d, aSide: o.aSide, hist: o.hist, econ: o.econ }));
       ll += Math.log(o.winner === 'A' ? p : 1 - p);
     }
@@ -262,8 +293,8 @@ export function posterior(rounds, prior, map) {
 export function analyze(match) {
   const { map, scoreA: a, scoreB: b, aSide, phase } = match;
   const r = a + b + 1;
-  const prior = priorD(match.prematchMapProb, map);
-  const post = posterior(match.rounds || [], prior, map);
+  const prior = match.prior ?? priorD(match.prematchMapProb, map);
+  const post = posterior([...(match.rounds || []), ...(match.seriesObs || [])], prior, map);
   const hist = match.hist || {};
   const econ = match.buyA && match.buyB ? { A: match.buyA, B: match.buyB } : null;
   const over = mapWinner(a, b);

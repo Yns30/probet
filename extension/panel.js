@@ -131,7 +131,7 @@ function renderBoard(m) {
   $('aliveB').innerHTML = dots(m.players.B);
   const eco = (buy, money, n) => {
     const per = n ? Math.round(money / n / 100) * 100 : 0;
-    return [buy ? (m.nextBuy ? `Prochain : ${BUYS[buy]}` : BUYS[buy]) : null, n ? `${per.toLocaleString('fr-FR')} $/joueur` : null].filter(Boolean).join(' · ');
+    return [buy ? (m.nextBuy ? `Prochain : ${BUYS[buy]}` : BUYS[buy]) : null, n ? `${per.toLocaleString('fr-FR')} $ en banque/joueur` : null].filter(Boolean).join(' · ');
   };
   $('ecoA').textContent = eco(m.buyA, m.moneyA, m.players.A.length);
   $('ecoB').textContent = eco(m.buyB, m.moneyB, m.players.B.length);
@@ -140,6 +140,7 @@ function renderBoard(m) {
   if (m.map) bits.push(m.map[0].toUpperCase() + m.map.slice(1));
   if (m.phase !== 'map_over') bits.push(`Round ${m.scoreA + m.scoreB + 1}`);
   bits.push(m.bombPlanted && m.phase === 'bomb_planted' ? '<span class="bomb">Bombe posée</span>' : PHASES[m.phase] || '');
+  if (m.timer != null) bits.push(`${Math.floor(m.timer / 60)}:${String(m.timer % 60).padStart(2, '0')}`);
   $('roundInfo').innerHTML = bits.filter(Boolean).join('<br>');
 }
 
@@ -204,8 +205,10 @@ function facts(m, res, src) {
   }
   if ((m.phase === 'freezetime' || live) && m.buyA && m.buyB && m.buyA !== m.buyB) {
     const rank = { eco: 0, force: 1, half: 2, full: 3 };
-    const [rich, poor] = rank[m.buyA] > rank[m.buyB] ? [A, B] : [B, A];
-    out.push(`Économie : ${rich} mieux équipé que ${poor} (${BUYS[m.buyA]} contre ${BUYS[m.buyB]})`);
+    const aRich = rank[m.buyA] > rank[m.buyB];
+    const [rich, poor] = aRich ? [A, B] : [B, A];
+    const [bRich, bPoor] = aRich ? [m.buyA, m.buyB] : [m.buyB, m.buyA];
+    out.push(`Économie : ${rich} mieux équipé que ${poor} (${BUYS[bRich]} contre ${BUYS[bPoor]})`);
   }
   if (m.phase === 'round_over' && m.buyA && m.buyB) {
     if (m.buyA === 'eco' && m.buyB !== 'eco') out.push(`${A} devrait être en eco au prochain round`);
@@ -268,6 +271,26 @@ $('marketRows').addEventListener('change', (e) => {
   render();
 });
 
+function renderPre(m, src) {
+  const [A, B] = m.names;
+  const meta = src.meta || {};
+  const items = [];
+  if (m.pre) {
+    $('preSummary').textContent = `${A} ${pct(m.pre.pMap)} sur cette map`;
+    items.push(`Estimation de départ : <b>${esc(A)} ${pct(m.pre.pMap)}</b> sur la map, ${pct(m.pre.pSeries)} sur la série`);
+    for (const s of m.pre.sources) items.push(esc(s));
+  } else {
+    $('preSummary').textContent = 'aucune donnée';
+    items.push('Pas de cote ni de classement lu sur la page : la force est estimée uniquement sur les rounds joués.');
+  }
+  const done = (meta.maps || []).filter((mp) => Number.isInteger(mp.s1) && Number.isInteger(mp.s2) && (mp.s1 >= 13 || mp.s2 >= 13));
+  if (done.length) items.push(`Maps déjà jouées prises en compte : ${done.map((mp) => `${esc(mp.name)} ${mp.s1}-${mp.s2}`).join(', ')}`);
+  const f1 = meta.team1?.form, f2 = meta.team2?.form;
+  if (f1 && f2) items.push(`Forme 3 mois : ${esc(A)} ${f1.won}V-${f1.lost}D · ${esc(B)} ${f2.won}V-${f2.lost}D`);
+  if (meta.h2h && (meta.h2h.w1 || meta.h2h.w2)) items.push(`Face-à-face : ${esc(A)} ${meta.h2h.w1} – ${meta.h2h.w2} ${esc(B)}`);
+  $('pre').innerHTML = items.map((t) => `<li>${t}</li>`).join('');
+}
+
 function renderFeed(src) {
   $('feed').innerHTML = [...(src.log || [])].reverse().slice(0, 14)
     .map((l) => `<li class="${l.type === 'RoundEnd' ? 'round' : ''}">${esc(l.text)}</li>`).join('');
@@ -293,7 +316,7 @@ function render() {
   else status('live', `En direct · ${label(src)}`);
 
   const mem = memFor(src.matchId || selected);
-  const meta = { ...src.meta, prematchOverride: prematchOverride() };
+  const meta = { ...src.meta, prematchOverride: prematchOverride(), timer: src.timer };
   // Nouvelle map : on repart d'un historique vierge.
   const key = `${src.scoreboard.mapName}|${seriesState(meta.maps, src.scoreboard.mapName).mapNumber}`;
   if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; }
@@ -312,6 +335,7 @@ function render() {
   renderSpark(mem.history, m.names[0]);
   $('facts').innerHTML = facts(m, res, src).map((f) => `<li>${esc(f)}</li>`).join('');
   renderFeed(src);
+  renderPre(m, src);
   const list = markets(res, m.names, m);
   const conf = confidence(res, 0.95, m.rounds.length);
   renderPicks(list, conf, mem);

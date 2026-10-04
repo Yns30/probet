@@ -58,7 +58,7 @@ test('scoreboard → état du match', () => {
   assert.ok(m.rounds.every((r) => r.aSide === 'CT'));
   assert.deepEqual(m.hist, {}); // round 6 : plus d'effet pistol
   assert.deepEqual([m.mapsA, m.mapsB, m.mapNumber, m.bestOf], [0, 0, 1, 3]);
-  assert.ok(m.prematchSeries > 0.4 && m.prematchSeries < 0.47);
+  assert.ok(m.pre.pSeries > 0.4 && m.pre.pSeries < 0.47);
   assert.equal(mem.econ[6].A, 'full');
 
   const res = analyze(m);
@@ -125,4 +125,66 @@ test('démo : une série complète au format scorebot', () => {
     assert.ok(res.pMap >= 0 && res.pMap <= 1);
   }
   assert.ok(last, 'la série se termine');
+});
+
+// ---------- Précision du modèle et données d'avant-match ----------
+import { liveRoundProb, playerUnit } from '../extension/engine.js';
+import { pagePrior, seriesObs } from '../extension/hltv.js';
+
+const full = (n, o = {}) => Array.from({ length: 5 }, (_, i) => ({ alive: i < n, hp: 100, primaryWeapon: 'ak47', helmet: true, kevlar: true, ...o }));
+const live = (ca, cb, extra = {}) => liveRoundProb({ aSide: 'CT', aliveA: ca, aliveB: cb, playersA: full(ca), playersB: full(cb), ...extra }, { map: 'mirage', d: 0, x: 0 });
+
+test('round live calé sur les taux pro (avantage numérique, bombe, PV, armes)', () => {
+  const avgSides = (a, b) => (live(a, b) + (1 - live(b, a))) / 2; // moyenne CT/T
+  const close = (p, target, tol = 0.05) => assert.ok(Math.abs(p - target) < tol, `${p.toFixed(3)} ≉ ${target}`);
+  close(avgSides(5, 4), 0.71);
+  close(avgSides(5, 3), 0.86);
+  close(avgSides(4, 2), 0.87);
+  close(avgSides(4, 1), 0.96, 0.03);
+  close(avgSides(2, 1), 0.70);
+  // Bombe posée : 1v1 favorable aux T
+  assert.ok(live(1, 1, { bombPlanted: true }) < 0.4);
+  // 4 survivants à 6 PV avec pistolets ≠ 4 survivants en pleine santé
+  const weak = liveRoundProb({ aSide: 'CT', aliveA: 4, aliveB: 1,
+    playersA: full(4, { hp: 6, primaryWeapon: '' }), playersB: full(1) }, { map: 'mirage', d: 0, x: 0 });
+  assert.ok(weak < live(4, 1) - 0.1, `${weak}`);
+  assert.ok(playerUnit({ hp: 100, primaryWeapon: 'awp', helmet: true }) > playerUnit({ hp: 100, primaryWeapon: 'mp9', helmet: true }));
+});
+
+test('avant-match : VRS, ratings et stats de map → force de départ', () => {
+  const meta = {
+    team1: { name: 'G2', vrs: 1807, rank: 8, rating: 1.04 }, team2: { name: '1win', vrs: 1370, rank: 42, rating: 1.06 },
+    mapStats: { mirage: { w1: 0.62, n1: 8, w2: 0.67, n2: 12 } },
+  };
+  const p = pagePrior(meta, 'de_mirage', 3);
+  assert.ok(p.pSeries > 0.65 && p.pSeries < 0.85, `${p.pSeries}`);
+  assert.ok(p.pMap > 0.55 && p.pMap < p.pSeries);
+  assert.equal(pagePrior({}, 'mirage', 3), null);
+  // Les cotes priment
+  const withOdds = pagePrior({ ...meta, odds: [[2.5, 1.5]] }, 'mirage', 3);
+  assert.ok(withOdds.pSeries < 0.5);
+});
+
+test('maps déjà jouées : rounds par mi-temps avec le bon côté', () => {
+  const obs = seriesObs([
+    { name: 'Dust2', s1: 11, s2: 13, halves: [{ s1: 4, s2: 8, side1: 'CT' }, { s1: 7, s2: 5, side1: 'T' }] },
+    { name: 'Ancient', s1: 13, s2: 1, halves: [{ s1: 11, s2: 1, side1: 'T' }, { s1: 2, s2: 0, side1: 'CT' }] },
+    { name: 'Mirage', s1: null, s2: null, halves: [] },
+  ], 'de_mirage');
+  assert.deepEqual(obs.map((o) => [o.map, o.wins, o.n, o.aSide]),
+    [['dust2', 4, 12, 'CT'], ['dust2', 7, 12, 'T'], ['ancient', 11, 12, 'T'], ['ancient', 2, 2, 'CT']]);
+  // Une série 24-14 en rounds rend G2 favori sur la 3e map
+  const sb = { ...SB, counterTerroristScore: 0, terroristScore: 0, currentRound: 1, frozen: true,
+    ctMatchHistory: { firstHalf: [], secondHalf: [] }, terroristMatchHistory: { firstHalf: [], secondHalf: [] } };
+  const metaS = { ...META, odds: [], maps: [
+    { name: 'Dust2', s1: 11, s2: 13, halves: [{ s1: 4, s2: 8, side1: 'CT' }, { s1: 7, s2: 5, side1: 'T' }] },
+    { name: 'Ancient', s1: 13, s2: 1, halves: [{ s1: 11, s2: 1, side1: 'T' }, { s1: 2, s2: 0, side1: 'CT' }] }] };
+  const res = analyze(toMatch(sb, metaS, { econ: {} }));
+  assert.ok(res.strength.mean > 0.1, `${res.strength.mean}`);
+});
+
+test('achat lu sur les survivants si le panneau arrive en cours de round', () => {
+  const sb = { ...SB, TERRORIST: SB.TERRORIST.map((p, i) => ({ ...p, primaryWeapon: i < 2 ? 'ak47' : '' })) };
+  const m = toMatch(sb, META, { econ: {} });
+  assert.equal(m.buyB, 'full'); // et non "eco" à cause des morts sans arme
 });

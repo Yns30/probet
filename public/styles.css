@@ -123,6 +123,20 @@ td input { width: 80px; background: var(--bg); border: 1px solid var(--line); bo
 td.pos { color: var(--good); font-weight: 600; }
 td.neg { color: var(--muted); }
 
+/* Calibration */
+dialog.wide { width: min(1100px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; }
+.zones { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.zones button { font-size: 13px; padding: 5px 10px; }
+.zones button.on { background: var(--text); color: var(--bg); }
+.zones button.done::after { content: " ✓"; color: var(--good); }
+.zones button.on.done::after { color: var(--bg); }
+.calwrap { position: relative; background: var(--bg); border-radius: 8px; overflow: hidden; }
+#calCanvas { display: block; max-width: 100%; max-height: 52vh; margin: 0 auto; cursor: crosshair; touch-action: none; }
+.caltest { font-size: 13px; color: var(--text-2); margin-top: 10px; min-height: 20px; }
+.caltest b { color: var(--text); }
+.sens { flex-direction: row; align-items: center; gap: 10px; margin-top: 10px; }
+menu span { display: flex; gap: 8px; }
+
 /* Réglages */
 dialog { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; width: min(560px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / .6); }

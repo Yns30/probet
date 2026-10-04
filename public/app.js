@@ -1,6 +1,8 @@
 import { analyze, markets, recommend, confidence, mapProbFromSeries, evaluateBet } from './engine.js';
 import { createMatch, ingest, toEngineInput, setScore, commitRound } from './tracker.js';
 import { createDemo } from './demo.js';
+import { createReader, cropPixels, ZONES } from './reader.js';
+import { baselineOf } from './pixels.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -22,7 +24,7 @@ let match = createMatch();
 let userOdds = {};
 let history = [];
 let lastResult = null;
-const settings = store.get('settings', { interval: 6, bank: null });
+const settings = store.get('settings', { interval: 1, bank: null });
 
 // ---------- Rendu ----------
 
@@ -148,8 +150,34 @@ $('marketRows').addEventListener('change', (e) => {
   update();
 });
 
+// Faits marquants déduits de l'état du match.
+function localFacts() {
+  const f = [];
+  const [A, B] = names();
+  const live = match.phase === 'live' || match.phase === 'bomb_planted';
+  const a = match.aliveA, b = match.aliveB;
+  if (match.bombPlanted) f.push(`Bombe posée${match.bombSite ? ' sur ' + match.bombSite : ''}`);
+  if (live && a != null && b != null && a + b > 0) {
+    if (a === 1 && b >= 1) f.push(`Clutch ${A} 1v${b}`);
+    else if (b === 1 && a >= 1) f.push(`Clutch ${B} 1v${a}`);
+    else if (Math.abs(a - b) >= 2) f.push(`${a > b ? A : B} en supériorité ${Math.max(a, b)}v${Math.min(a, b)}`);
+  }
+  if (live && match.timer != null && match.timer < 25 && !match.bombPlanted) f.push('Fin de chrono : les T doivent poser');
+  const r = match.scoreA + match.scoreB + 1;
+  const pos = r <= 12 ? r : r - 12;
+  if (r <= 24 && (pos === 2 || pos === 3) && match.hist.pw) {
+    f.push(`${match.hist.pw === 'A' ? A : B} a gagné le pistol : gros avantage économique`);
+  }
+  const last = match.rounds.filter((o) => !o.synthetic).slice(-8);
+  let k = 0;
+  for (let i = last.length - 1; i >= 0 && last[i].winner === last[last.length - 1].winner; i--) k++;
+  if (k >= 3) f.push(`${last[last.length - 1].winner === 'A' ? A : B} enchaîne ${k} rounds`);
+  return f.slice(0, 3);
+}
+
 function renderFacts() {
-  $('facts').innerHTML = match.facts.map((f) => `<li>${esc(f)}</li>`).join('');
+  const facts = match.facts.length ? match.facts : localFacts();
+  $('facts').innerHTML = facts.map((f) => `<li>${esc(f)}</li>`).join('');
 }
 
 function logEvents(list) {
@@ -184,71 +212,57 @@ function status(kind, text) {
   el.querySelector('span').textContent = text;
 }
 
-// ---------- Capture du stream ----------
+// ---------- Capture du stream + lecture locale (OCR) ----------
 
 const video = $('video');
-let capture = null; // { stream, timer, busy }
+let capture = null; // { stream, timer }
 let demo = null;
+let reader = null;
+let calib = store.get('calib', { zones: {}, baseline: {}, sensitivity: 0.62 });
 
-function grab() {
-  const w = video.videoWidth, h = video.videoHeight;
-  if (!w || !h) return null;
-  const full = document.createElement('canvas');
-  const scale = Math.min(1, 1280 / w);
-  full.width = Math.round(w * scale); full.height = Math.round(h * scale);
-  full.getContext('2d').drawImage(video, 0, 0, full.width, full.height);
-  // Zoom sur le bandeau du haut (scores, timer, maps) pour une lecture fiable.
-  const hud = document.createElement('canvas');
-  const cropH = Math.round(h * 0.16);
-  const hs = Math.min(1, 1600 / w);
-  hud.width = Math.round(w * hs); hud.height = Math.round(cropH * hs);
-  hud.getContext('2d').drawImage(video, 0, 0, w, cropH, 0, 0, hud.width, hud.height);
-  return { frame: full.toDataURL('image/jpeg', 0.82), hud: hud.toDataURL('image/jpeg', 0.9) };
-}
+const calibrated = () => Boolean(calib.zones.scoreL && calib.zones.scoreR);
 
-function readContext() {
-  const [A, B] = names();
-  const [L, R] = match.aIsLeft ? [A, B] : [B, A];
-  const [sl, sr] = match.aIsLeft ? [match.scoreA, match.scoreB] : [match.scoreB, match.scoreA];
-  return { left: L, right: R, score: `${sl}-${sr}`, map: match.map };
+async function ensureReader() {
+  if (reader) return reader;
+  status('live', 'Chargement de l’OCR…');
+  reader = await createReader();
+  return reader;
 }
 
 async function tick() {
   if (!capture) return;
   const started = performance.now();
-  const imgs = grab();
-  if (imgs) {
+  if (video.videoWidth && calibrated()) {
     try {
-      const r = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...imgs, context: readContext() }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-      const ev = ingest(match, data.state);
-      logEvents(ev);
+      const r = await ensureReader();
+      const read = await r.read(video, calib);
+      logEvents(ingest(match, read));
       update();
-      status('live', `En direct · lecture ${(data.ms / 1000).toFixed(1).replace('.', ',')} s`);
+      const ms = performance.now() - started;
+      status(read.hud_visible ? 'live' : 'paused',
+        read.hud_visible ? `En direct · lecture ${Math.round(ms)} ms` : 'Score illisible (replay, pause ou mauvaise calibration ?)');
     } catch (err) {
       status('error', err.message);
     }
+  } else if (!calibrated()) {
+    status('paused', 'Calibrez le HUD pour démarrer la lecture');
   }
   if (!capture) return;
-  const wait = Math.max(500, settings.interval * 1000 - (performance.now() - started));
+  const wait = Math.max(200, settings.interval * 1000 - (performance.now() - started));
   capture.timer = setTimeout(tick, wait);
 }
 
 async function startCapture() {
   stopDemo();
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false });
     video.srcObject = stream;
     await video.play();
     capture = { stream, timer: null };
     stream.getVideoTracks()[0].addEventListener('ended', stopCapture);
     $('btnCapture').textContent = 'Arrêter';
-    status('live', 'Connexion au stream…');
+    status('live', 'Stream connecté');
+    if (!calibrated()) openCalib();
     tick();
   } catch (err) {
     status('error', err.name === 'NotAllowedError' ? 'Partage refusé' : err.message);
@@ -266,6 +280,147 @@ function stopCapture() {
 }
 
 $('btnCapture').addEventListener('click', () => (capture ? stopCapture() : startCapture()));
+
+// ---------- Calibration ----------
+
+const cal = { zone: 'scoreL', snap: null, drag: null };
+const calCanvas = $('calCanvas');
+
+function snapshot() {
+  if (!video.videoWidth) return null;
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return c;
+}
+
+function drawCalib() {
+  const snap = cal.snap;
+  $('calEmpty').hidden = Boolean(snap);
+  calCanvas.hidden = !snap;
+  if (!snap) return;
+  calCanvas.width = snap.width; calCanvas.height = snap.height;
+  const ctx = calCanvas.getContext('2d');
+  ctx.drawImage(snap, 0, 0);
+  const lw = Math.max(2, snap.width / 640);
+  ctx.font = `600 ${Math.round(12 * lw)}px system-ui, sans-serif`;
+  const rects = { ...calib.zones };
+  if (cal.drag) rects[cal.zone] = cal.drag;
+  for (const z of ZONES) {
+    const r = rects[z.id];
+    if (!r) continue;
+    const [x, y, w, h] = [r.x * snap.width, r.y * snap.height, r.w * snap.width, r.h * snap.height];
+    ctx.strokeStyle = z.id === cal.zone ? '#ffffff' : '#3fb950';
+    ctx.lineWidth = lw;
+    ctx.strokeRect(x, y, w, h);
+    if (z.id !== cal.zone) continue; // étiquette seulement pour la zone active
+    ctx.fillStyle = 'rgba(0,0,0,.75)';
+    const tw = ctx.measureText(z.label).width;
+    const ly = y + h + 18 * lw < snap.height ? y + h + 2 : Math.max(0, y - 18 * lw);
+    ctx.fillRect(x, ly, tw + 8 * lw, 16 * lw);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(z.label, x + 4 * lw, ly + 12 * lw);
+  }
+  $('zoneBtns').querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.z === cal.zone);
+    b.classList.toggle('done', Boolean(calib.zones[b.dataset.z]));
+  });
+}
+
+async function testCalib() {
+  if (!cal.snap || !calibrated()) {
+    $('calTest').textContent = 'Tracez au minimum les deux scores.';
+    return;
+  }
+  $('calTest').textContent = 'Lecture test…';
+  try {
+    const r = await ensureReader();
+    r.reset();
+    const rd = await r.read(cal.snap, calib);
+    const v = (x) => (x == null ? '—' : x);
+    const t = rd.round_timer == null ? '—' : `${Math.floor(rd.round_timer / 60)}:${String(rd.round_timer % 60).padStart(2, '0')}`;
+    $('calTest').innerHTML = `Lecture test : score <b>${v(rd.left.score)} - ${v(rd.right.score)}</b> · chrono <b>${t}</b>${rd.bomb_planted ? ' · <b>bombe</b>' : ''}
+      · joueurs <b>${v(rd.left.alive)}</b> / <b>${v(rd.right.alive)}</b> · côtés <b>${v(rd.left.side)}</b> / <b>${v(rd.right.side)}</b>`;
+    status(capture ? 'live' : 'paused', capture ? 'Stream connecté' : 'En pause');
+  } catch (err) {
+    $('calTest').textContent = `Erreur OCR : ${err.message}`;
+  }
+}
+
+function openCalib() {
+  cal.snap = snapshot() || cal.snap;
+  $('zoneBtns').innerHTML = ZONES.map((z) => `<button type="button" data-z="${z.id}">${esc(z.label)}${z.required ? ' *' : ''}</button>`).join('');
+  $('calSens').value = calib.sensitivity ?? 0.62;
+  drawCalib();
+  $('calib').showModal();
+  testCalib();
+}
+
+$('btnCalib').addEventListener('click', openCalib);
+$('zoneBtns').addEventListener('click', (e) => {
+  const id = e.target.dataset.z;
+  if (!id) return;
+  cal.zone = id;
+  drawCalib();
+});
+$('calSnap').addEventListener('click', () => { cal.snap = snapshot() || cal.snap; drawCalib(); testCalib(); });
+$('calClear').addEventListener('click', () => {
+  calib = { zones: {}, baseline: {}, sensitivity: Number($('calSens').value) };
+  store.set('calib', calib);
+  drawCalib();
+  testCalib();
+});
+$('calSens').addEventListener('change', () => {
+  calib.sensitivity = Number($('calSens').value);
+  store.set('calib', calib);
+  testCalib();
+});
+
+const pointer = (e) => {
+  const r = calCanvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+    y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+  };
+};
+calCanvas.addEventListener('pointerdown', (e) => {
+  if (!cal.snap) return;
+  calCanvas.setPointerCapture(e.pointerId);
+  const p = pointer(e);
+  cal.start = p;
+  cal.drag = { x: p.x, y: p.y, w: 0, h: 0 };
+});
+calCanvas.addEventListener('pointermove', (e) => {
+  if (!cal.start) return;
+  const p = pointer(e);
+  cal.drag = {
+    x: Math.min(p.x, cal.start.x), y: Math.min(p.y, cal.start.y),
+    w: Math.abs(p.x - cal.start.x), h: Math.abs(p.y - cal.start.y),
+  };
+  drawCalib();
+});
+calCanvas.addEventListener('pointerup', () => {
+  if (!cal.start) return;
+  const d = cal.drag;
+  cal.start = null; cal.drag = null;
+  if (d && d.w > 0.003 && d.h > 0.003) {
+    calib.zones[cal.zone] = d;
+    if (cal.zone.startsWith('players')) {
+      // Référence "joueur en vie" prise sur cette image (temps d'achat recommandé).
+      calib.baseline = { ...calib.baseline, ...pickBaseline(cal.zone) };
+    }
+    store.set('calib', calib);
+    const i = ZONES.findIndex((z) => z.id === cal.zone);
+    const next = ZONES.slice(i + 1).find((z) => !calib.zones[z.id]);
+    if (next) cal.zone = next.id;
+    testCalib();
+  }
+  drawCalib();
+});
+
+function pickBaseline(id) {
+  return { [id]: baselineOf(cropPixels(cal.snap, calib.zones[id]).img) };
+}
 
 // ---------- Démo ----------
 
@@ -329,9 +484,8 @@ $('settings').addEventListener('close', () => {
     if (nb) match.names.B = nb;
   }
   match.bestOf = Number($('setBo').value);
-  const mp = $('setMap').value.trim().toLowerCase();
-  if (mp) match.map = mp;
-  settings.interval = Math.max(2, Math.min(60, Number($('setInterval').value) || 6));
+  match.map = $('setMap').value || match.map;
+  settings.interval = Math.max(0.5, Math.min(10, Number($('setInterval').value) || 1));
   settings.bank = Number($('setBank').value) || null;
   store.set('settings', settings);
   applyPrematch();
@@ -369,10 +523,6 @@ document.querySelector('.manual').addEventListener('click', (e) => {
 });
 
 // ---------- Démarrage ----------
-
-fetch('/api/health').then((r) => r.json()).then((h) => {
-  if (!h.credentials) status('paused', 'Clé API absente : mode démo/manuel');
-}).catch(() => status('error', 'Serveur injoignable'));
 
 if (new URLSearchParams(location.search).has('demo')) startDemo();
 update();

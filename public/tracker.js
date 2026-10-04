@@ -17,6 +17,7 @@ export function createMatch() {
     timer: null, buyA: null, buyB: null, roundBuy: null,
     rounds: [], hist: {}, facts: [], visionConf: null,
     pending: null, mapOver: null, seen: false,
+    cand: {}, awaitReset: false, timerArmed: false,
   };
 }
 
@@ -45,6 +46,12 @@ export function commitRound(m, winner, ev) {
   if (winner === 'A') m.scoreA++; else m.scoreB++;
   m.roundBuy = null;
   m.bombPlanted = false;
+  m.awaitReset = true;
+  m.timerArmed = false;
+  m.timer = null;
+  m.aliveA = null; m.aliveB = null;
+  m.phase = 'round_over';
+  m.cand = {};
   ev.push(`Round ${r} pour ${name(m, winner)} (${m.scoreA}-${m.scoreB})`);
   const w = mapWinner(m.scoreA, m.scoreB);
   if (w) {
@@ -66,8 +73,8 @@ export function setScore(m, sa, sb, ev) {
   let kb = m.rounds.filter((o) => o.winner === 'B').length;
   if (ka > sa || kb > sb) { m.rounds = []; ka = kb = 0; }
   let r = m.rounds.length;
-  while (ka < sa) { m.rounds.push({ r: ++r, winner: 'A', aSide: null }); ka++; }
-  while (kb < sb) { m.rounds.push({ r: ++r, winner: 'B', aSide: null }); kb++; }
+  while (ka < sa) { m.rounds.push({ r: ++r, winner: 'A', aSide: null, synthetic: true }); ka++; }
+  while (kb < sb) { m.rounds.push({ r: ++r, winner: 'B', aSide: null, synthetic: true }); kb++; }
   m.rounds.sort((x, y) => x.r - y.r);
   m.scoreA = sa; m.scoreB = sb; m.hist = {};
   m.mapOver = mapWinner(sa, sb);
@@ -87,28 +94,50 @@ export function newMap(m, ev) {
   ev.push(`Début de la map ${m.mapNumber}`);
 }
 
+// Retourne 'swapped' si les équipes ont échangé leur place sur le HUD.
 function handleScore(m, sa, sb, ev) {
-  if (sa === m.scoreA && sb === m.scoreB) { m.pending = null; return; }
-  const da = sa - m.scoreA, db = sb - m.scoreB;
-  if (!m.mapOver && m.seen && ((da === 1 && db === 0) || (da === 0 && db === 1))) {
+  if (sa === m.scoreA && sb === m.scoreB) { m.pending = null; return null; }
+  const plusOne = (x, y) => !m.mapOver
+    && ((x - m.scoreA === 1 && y === m.scoreB) || (x === m.scoreA && y - m.scoreB === 1));
+  const fits = (x, y) => (x === m.scoreA && y === m.scoreB) || plusOne(x, y);
+  if (m.seen && plusOne(sa, sb)) {
     m.pending = null;
-    return commitRound(m, da ? 'A' : 'B', ev);
+    commitRound(m, sa > m.scoreA ? 'A' : 'B', ev);
+    return null;
+  }
+  if (m.seen && fits(sb, sa)) {
+    if (m.pending !== 'swap') { m.pending = 'swap'; return null; }
+    m.pending = null;
+    m.aIsLeft = !m.aIsLeft;
+    ev.push('Les équipes ont changé de place sur le HUD');
+    return 'swapped';
   }
   const key = `${sa}-${sb}`;
-  if (m.pending !== key) { m.pending = key; return; }
+  if (m.pending !== key) { m.pending = key; return null; }
   m.pending = null;
   if (sa === 0 && sb === 0) newMap(m, ev);
   else setScore(m, sa, sb, ev);
+  return null;
 }
 
-// read : sortie JSON de la vision (voir src/vision.js). Retourne la liste d'événements.
+// Lectures bruitées (OCR/pixels) : une valeur n'est retenue qu'après deux lectures identiques.
+function stable(m, key, v, noisy) {
+  if (!noisy || v == null) return v;
+  const c = m.cand[key];
+  if (c && c.v === v) c.n++;
+  else m.cand[key] = { v, n: 1 };
+  return m.cand[key].n >= 2 ? v : undefined;
+}
+
+// read : lecture du HUD (voir reader.js, ou demo.js). Retourne la liste d'événements.
 export function ingest(m, read) {
   const ev = [];
   if (!read || !read.hud_visible || read.phase === 'not_ingame' || read.phase === 'replay') {
     m.phase = read?.phase || 'not_ingame';
     return ev;
   }
-  const { a, b } = orient(m, read);
+  const noisy = Boolean(read.noisy);
+  let { a, b } = orient(m, read);
   m.visionConf = typeof read.confidence === 'number' ? read.confidence : null;
   m.facts = Array.isArray(read.key_facts) ? read.key_facts.slice(0, 3) : [];
 
@@ -118,7 +147,10 @@ export function ingest(m, read) {
 
   // Score d'abord, avec le côté du round qui vient de se jouer.
   if (Number.isInteger(a.score) && Number.isInteger(b.score)) {
-    handleScore(m, a.score, b.score, ev);
+    if (handleScore(m, a.score, b.score, ev) === 'swapped') {
+      ({ a, b } = orient(m, read));
+      handleScore(m, a.score, b.score, ev);
+    }
     m.seen = true;
   }
 
@@ -130,19 +162,32 @@ export function ingest(m, read) {
     m.mapsA = ma; m.mapsB = mb;
   }
 
-  const side = a.side || other(b.side);
+  const side = stable(m, 'side', a.side || other(b.side), noisy);
   if (side) m.aSide = side;
 
-  m.phase = read.phase;
-  if (read.phase === 'freezetime') {
-    m.aliveA = 5; m.aliveB = 5;
-  } else {
-    if (Number.isInteger(a.alive)) m.aliveA = Math.max(0, Math.min(5, a.alive));
-    if (Number.isInteger(b.alive)) m.aliveB = Math.max(0, Math.min(5, b.alive));
+  const clampAlive = (x) => (Number.isInteger(x) ? Math.max(0, Math.min(5, x)) : null);
+  const aliveA = stable(m, 'aliveA', read.phase === 'freezetime' ? 5 : clampAlive(a.alive), noisy);
+  const aliveB = stable(m, 'aliveB', read.phase === 'freezetime' ? 5 : clampAlive(b.alive), noisy);
+  const timer = Number.isInteger(read.round_timer) ? read.round_timer : null;
+  const bomb = stable(m, 'bomb', Boolean(read.bomb_planted) || read.phase === 'bomb_planted', noisy);
+
+  // Après un round gagné, on attend le début du suivant (10 joueurs en vie ou chrono plein).
+  if (m.awaitReset) {
+    const noInfo = a.alive == null && b.alive == null && timer == null && read.phase !== 'round_over';
+    const fresh = read.phase === 'freezetime' || (aliveA === 5 && aliveB === 5) || (timer != null && timer >= 90) || noInfo;
+    if (!fresh) { m.phase = 'round_over'; return ev; }
+    m.awaitReset = false;
   }
-  m.bombPlanted = Boolean(read.bomb_planted) || read.phase === 'bomb_planted';
+
+  m.phase = read.phase === 'round_over' ? 'round_over' : read.phase;
+  if (aliveA != null) m.aliveA = aliveA;
+  if (aliveB != null) m.aliveB = aliveB;
+  if (bomb !== undefined) m.bombPlanted = bomb;
+  if (m.bombPlanted && m.phase === 'live') m.phase = 'bomb_planted';
   m.bombSite = read.bomb_site || null;
-  m.timer = Number.isInteger(read.round_timer) ? read.round_timer : null;
+  // Le chrono n'est fiable qu'une fois vu "plein" (sinon ce peut être le temps d'achat).
+  if (timer != null && timer >= 90) m.timerArmed = true;
+  m.timer = m.timerArmed ? timer : null;
   if (read.phase === 'freezetime' || read.phase === 'live' || read.phase === 'bomb_planted') {
     if (BUYS.has(a.buy)) m.buyA = a.buy;
     if (BUYS.has(b.buy)) m.buyB = b.buy;

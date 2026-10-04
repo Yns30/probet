@@ -132,3 +132,72 @@ test('démo : une série complète se déroule sans incohérence', () => {
   assert.ok(m.mapsA === 2 || m.mapsB === 2, `maps ${m.mapsA}-${m.mapsB}`);
   assert.ok(maxMap >= 2);
 });
+
+// ---------- Lecture locale (pixels / OCR) ----------
+import { sideFromColor, countAlive, baselineOf, binarize, parseScore, parseTimer, isRed } from '../public/pixels.js';
+
+function solid(w, h, rgb) {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) data.set([...rgb, 255], i * 4);
+  return { data, width: w, height: h };
+}
+function cards(alive, rgb, n = 5) {
+  const img = solid(100, 50 * n, [40, 40, 40]);
+  for (let k = 0; k < alive; k++) {
+    for (let y = k * 50 + 2; y < k * 50 + 48; y++) {
+      for (let x = 0; x < 100; x++) img.data.set([...rgb, 255], (y * 100 + x) * 4);
+    }
+  }
+  return img;
+}
+
+test('pixels : côté par la couleur, bombe, joueurs en vie', () => {
+  assert.equal(sideFromColor(solid(20, 10, [42, 111, 214])), 'CT');
+  assert.equal(sideFromColor(solid(20, 10, [224, 138, 26])), 'T');
+  assert.equal(sideFromColor(solid(20, 10, [30, 30, 30])), null);
+  assert.equal(isRed(solid(20, 10, [208, 32, 32])), true);
+  const base = baselineOf(cards(5, [42, 111, 214]));
+  assert.equal(countAlive(cards(5, [42, 111, 214]), base), 5);
+  assert.equal(countAlive(cards(3, [42, 111, 214]), base), 3);
+  assert.equal(countAlive(cards(0, [42, 111, 214]), base), 0);
+  assert.equal(countAlive(cards(2, [224, 138, 26])), 2); // sans référence
+});
+
+test('pixels : binarisation texte noir sur fond blanc', () => {
+  const img = solid(10, 10, [20, 20, 200]);
+  img.data.set([255, 255, 255, 255], 0); // un pixel de "texte" clair
+  binarize(img);
+  assert.equal(img.data[0], 0);
+  assert.equal(img.data[4 * 50], 255);
+});
+
+test('OCR : interprétation des scores et du chrono', () => {
+  assert.equal(parseScore('12\n'), 12);
+  assert.equal(parseScore('O'), 0);
+  assert.equal(parseScore(''), null);
+  assert.equal(parseScore('99'), null);
+  assert.equal(parseTimer('1:45'), 105);
+  assert.equal(parseTimer('145'), 105);
+  assert.equal(parseTimer('0:09'), 9);
+  assert.equal(parseTimer('9.8'), 9);
+  assert.equal(parseTimer('3:99'), null);
+});
+
+test('tracker : lecture bruitée lissée et attente du round suivant', () => {
+  const m = createMatch();
+  const r = (l, rr, al, ar, timer = 80) => ({ ...read(l, rr), noisy: true, round_timer: timer,
+    left: { ...read(l, rr).left, alive: al }, right: { ...read(l, rr).right, alive: ar } });
+  ingest(m, r(0, 0, 5, 5)); ingest(m, r(0, 0, 5, 5));
+  ingest(m, r(0, 0, 3, 5)); // une seule lecture : ignorée
+  assert.equal(m.aliveA, 5);
+  ingest(m, r(0, 0, 3, 5));
+  assert.equal(m.aliveA, 3);
+  ingest(m, r(1, 0, 3, 0));
+  assert.equal(m.scoreA, 1);
+  assert.equal(m.phase, 'round_over');
+  ingest(m, r(1, 0, 3, 0)); ingest(m, r(1, 0, 3, 0));
+  assert.equal(m.phase, 'round_over'); // cartes du round précédent encore affichées
+  ingest(m, r(1, 0, 5, 5, 115)); ingest(m, r(1, 0, 5, 5, 115));
+  assert.equal(m.phase, 'live');
+  assert.equal(m.aliveB, 5);
+});

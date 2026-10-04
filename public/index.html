@@ -12,6 +12,7 @@
     <div id="status" class="status idle"><i></i><span>En attente</span></div>
     <div class="actions">
       <button id="btnCapture" class="primary">Connecter le stream</button>
+      <button id="btnCalib">Calibrer le HUD</button>
       <button id="btnDemo">Démo</button>
       <button id="btnSettings" aria-label="Réglages">Réglages</button>
     </div>
@@ -81,7 +82,16 @@
         <label>Format
           <select id="setBo"><option value="1">BO1</option><option value="3" selected>BO3</option><option value="5">BO5</option></select>
         </label>
-        <label>Map <input id="setMap" placeholder="ex. mirage"></label>
+        <label>Map
+          <select id="setMap">
+            <option value="">— non précisée —</option>
+            <option value="ancient">Ancient</option><option value="anubis">Anubis</option>
+            <option value="dust2">Dust2</option><option value="inferno">Inferno</option>
+            <option value="mirage">Mirage</option><option value="nuke">Nuke</option>
+            <option value="overpass">Overpass</option><option value="train">Train</option>
+            <option value="vertigo">Vertigo</option>
+          </select>
+        </label>
       </div>
       <div class="row">
         <label>Cote pré-match A <input id="setOddsA" type="number" step="0.01" min="1.01" placeholder="ex. 1.65"></label>
@@ -89,7 +99,7 @@
       </div>
       <p class="hint">Les cotes d'avant-match (vainqueur de la série) calibrent la force des équipes avant les premiers rounds.</p>
       <div class="row">
-        <label>Lecture toutes les (s) <input id="setInterval" type="number" min="2" max="60" value="6"></label>
+        <label>Lecture toutes les (s) <input id="setInterval" type="number" min="0.5" max="10" step="0.5" value="1"></label>
         <label>Bankroll (€) <input id="setBank" type="number" min="0" step="10" placeholder="optionnel"></label>
       </div>
 
@@ -110,10 +120,29 @@
     </form>
   </dialog>
 
+  <dialog id="calib" class="wide">
+    <form method="dialog">
+      <h2>Calibrer le HUD</h2>
+      <p class="hint">À faire une fois par organisateur de tournoi (BLAST, PGL, ESL…), idéalement <b>pendant le temps d'achat</b>, quand les 10 joueurs sont en vie. Choisissez une zone, puis tracez un rectangle serré autour d'elle sur l'image. Seuls les deux scores sont obligatoires.</p>
+      <div id="zoneBtns" class="zones"></div>
+      <div class="calwrap"><canvas id="calCanvas"></canvas><p id="calEmpty" class="empty">Connectez d'abord le stream pour afficher une image.</p></div>
+      <div id="calTest" class="caltest"></div>
+      <label class="sens">Sensibilité joueurs morts <input id="calSens" type="range" min="0.4" max="0.85" step="0.01" value="0.62"></label>
+      <menu>
+        <span>
+          <button type="button" id="calSnap">Nouvelle capture</button>
+          <button type="button" id="calClear">Tout effacer</button>
+        </span>
+        <button value="ok" class="primary">Terminer</button>
+      </menu>
+    </form>
+  </dialog>
+
   <footer class="foot">
     Estimations statistiques, pas des certitudes. Le stream a souvent 10–60 s de retard sur les cotes live : vérifiez le score chez le bookmaker avant de valider. Jouez uniquement ce que vous pouvez perdre — 18+.
   </footer>
 
+  <script src="/vendor/tesseract/tesseract.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -312,45 +312,8 @@ export function posterior(rounds, prior, map) {
 
 // ---------- Analyse complète ----------
 
-// match : état normalisé (voir app.js → toEngineInput)
-export function analyze(match) {
-  const { map, scoreA: a, scoreB: b, aSide, phase } = match;
-  const r = a + b + 1;
-  const prior = match.prior ?? priorD(match.prematchMapProb, map);
-  const post = posterior([...(match.rounds || []), ...(match.seriesObs || [])], prior, map);
-  const hist = match.hist || {};
-  const econ = match.buyA && match.buyB ? { A: match.buyA, B: match.buyB } : null;
-  const over = mapWinner(a, b);
-  const prev = (match.rounds || [])[(match.rounds || []).length - 1];
-  const last = prev && !prev.synthetic ? prev.winner : undefined;
-
-  const final = new Map();
-  let pRound = null;
-  if (over) {
-    final.set(`${a}-${b}`, 1);
-  } else {
-    let pr = 0;
-    for (const { d, w } of post.support) {
-      const base = { map, d, x: roundLogit(r, { map, d, aSide, hist, econ, last }) };
-      const live = phase === 'live' || phase === 'bomb_planted';
-      const p = live ? liveRoundProb({ ...match, aSide }, base) : sig(base.x);
-      pr += w * p;
-      const opts = { map, d, refRound: r, refSide: aSide };
-      for (const [win, pw] of [['A', p], ['B', 1 - p]]) {
-        const na = a + (win === 'A'), nb = b + (win === 'B');
-        if (mapWinner(na, nb)) {
-          const k = `${na}-${nb}`;
-          final.set(k, (final.get(k) || 0) + w * pw);
-          continue;
-        }
-        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win), econ: match.nextEcon?.[win], last: win });
-        for (const [k, m] of dist) final.set(k, (final.get(k) || 0) + w * pw * m);
-      }
-    }
-    pRound = pr;
-  }
-
-  // Agrégats
+// Distribution des scores finaux → probabilités des marchés de la map.
+function aggregate(final) {
   let pMap = 0, pOT = 0, pRegA = 0, pRegB = 0;
   const totals = new Map(), margins = new Map();
   for (const [k, m] of final) {
@@ -364,25 +327,81 @@ export function analyze(match) {
   }
   const pOver = (line) => [...totals].reduce((s, [t, m]) => s + (t > line ? m : 0), 0);
   const pCover = (h) => [...margins].reduce((s, [mg, m]) => s + (mg + h > 0 ? m : 0), 0);
+  return { pMap, pOT, pRegA, pRegB, totals, pOver, pCover };
+}
+
+// match : état normalisé (voir app.js → toEngineInput)
+export function analyze(match) {
+  const { map, scoreA: a, scoreB: b, aSide, phase } = match;
+  const r = a + b + 1;
+  const prior = match.prior ?? priorD(match.prematchMapProb, map);
+  const post = posterior([...(match.rounds || []), ...(match.seriesObs || [])], prior, map);
+  const hist = match.hist || {};
+  const econ = match.buyA && match.buyB ? { A: match.buyA, B: match.buyB } : null;
+  const over = mapWinner(a, b);
+  const prev = (match.rounds || [])[(match.rounds || []).length - 1];
+  const last = prev && !prev.synthetic ? prev.winner : undefined;
+
+  const final = new Map();
+  const perD = []; // résultats par valeur de force plausible (incertitude du modèle)
+  let pRound = null;
+  if (over) {
+    final.set(`${a}-${b}`, 1);
+  } else {
+    let pr = 0;
+    for (const { d, w } of post.support) {
+      const base = { map, d, x: roundLogit(r, { map, d, aSide, hist, econ, last }) };
+      const live = phase === 'live' || phase === 'bomb_planted';
+      const p = live ? liveRoundProb({ ...match, aSide }, base) : sig(base.x);
+      pr += w * p;
+      const fd = new Map();
+      const opts = { map, d, refRound: r, refSide: aSide };
+      for (const [win, pw] of [['A', p], ['B', 1 - p]]) {
+        const na = a + (win === 'A'), nb = b + (win === 'B');
+        if (mapWinner(na, nb)) {
+          const k = `${na}-${nb}`;
+          fd.set(k, (fd.get(k) || 0) + pw);
+          continue;
+        }
+        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win), econ: match.nextEcon?.[win], last: win });
+        for (const [k, m] of dist) fd.set(k, (fd.get(k) || 0) + pw * m);
+      }
+      for (const [k, m] of fd) final.set(k, (final.get(k) || 0) + w * m);
+      perD.push({ d, w, pRound: p, ...aggregate(fd) });
+    }
+    pRound = pr;
+  }
+
+  const { pMap, pOT, pRegA, pRegB, totals, pOver, pCover } = aggregate(final);
 
   // Série : maps suivantes jouées à force moyenne postérieure, rétrécie vers l'a priori
   // (autre map, autre contexte).
   const bestOf = match.bestOf || 1;
-  let pSeries = null;
-  if (bestOf > 1) {
-    const dNext = 0.6 * post.mean + 0.4 * prior.mean;
-    const pNext = mapProbFromD(dNext, null);
-    const mA = match.mapsA || 0, mB = match.mapsB || 0;
-    pSeries = over
+  const mA = match.mapsA || 0, mB = match.mapsB || 0;
+  const series = (pm, d) => {
+    if (bestOf <= 1) return null;
+    const pNext = mapProbFromD(0.6 * d + 0.4 * prior.mean, null);
+    return over
       ? seriesProb(pNext, mA + (over === 'A'), mB + (over === 'B'), bestOf, pNext)
-      : seriesProb(pMap, mA, mB, bestOf, pNext);
-  }
+      : seriesProb(pm, mA, mB, bestOf, pNext);
+  };
+  const pSeries = series(pMap, post.mean);
+  for (const s of perD) s.pSeries = series(s.pMap, s.d);
+
+  // Écart-type d'une probabilité de marché sur l'incertitude de la force des équipes :
+  // un pari solide doit le rester dans le bas de la fourchette.
+  const spread = (fn) => {
+    if (!perD.length) return 0;
+    const xs = perD.map((s) => [s.w, fn(s)]);
+    const mean = xs.reduce((t, [w, x]) => t + w * x, 0);
+    return Math.sqrt(xs.reduce((t, [w, x]) => t + w * (x - mean) ** 2, 0));
+  };
 
   const expTotal = [...totals].reduce((s, [t, m]) => s + t * m, 0);
   return {
     round: r, over, pRound, pMap, pOT, pRegA, pRegB, pSeries, expTotal,
     strength: { mean: post.mean, sd: post.sd, prior: prior.mean },
-    totals: Object.fromEntries(totals), pOver, pCover,
+    totals: Object.fromEntries(totals), pOver, pCover, spread,
     likelyScores: [...final].sort((x, y) => y[1] - x[1]).slice(0, 5),
   };
 }
@@ -392,35 +411,41 @@ export function analyze(match) {
 const num = (x) => String(x).replace('.', ',');
 const fmtLine = (x) => (x > 0 ? `+${num(x)}` : num(x));
 
+// Lignes de total proposées par les bookmakers (fixes : elles ne bougent pas avec le score).
+export const TOTAL_LINES = [19.5, 20.5, 21.5, 22.5, 23.5];
+
+// Chaque marché : probabilité p et écart-type sd (incertitude du modèle sur la force).
 export function markets(res, names, match) {
   const [A, B] = names;
   const out = [];
-  const add = (id, group, label, p) => out.push({ id, group, label, p });
+  const add = (id, group, label, f) => {
+    const p = f(res);
+    out.push({ id, group, label, p, sd: res.spread ? res.spread(f) : 0 });
+  };
   if (res.pRound != null) {
-    add(`round${res.round}:A`, `Round ${res.round}`, A, res.pRound);
-    add(`round${res.round}:B`, `Round ${res.round}`, B, 1 - res.pRound);
+    add(`round${res.round}:A`, `Round ${res.round}`, A, (s) => s.pRound);
+    add(`round${res.round}:B`, `Round ${res.round}`, B, (s) => 1 - s.pRound);
   }
   const mapLabel = `Map${match.mapNumber ? ' ' + match.mapNumber : ''}`;
   if (!res.over) {
-    add('map:A', `${mapLabel} — vainqueur`, A, res.pMap);
-    add('map:B', `${mapLabel} — vainqueur`, B, 1 - res.pMap);
-    // Lignes de total proches de l'espérance
-    const center = Math.round(res.expTotal) - 0.5;
-    for (const line of [center - 1, center, center + 1]) {
-      if (line < match.scoreA + match.scoreB) continue;
+    add('map:A', `${mapLabel} — vainqueur`, A, (s) => s.pMap);
+    add('map:B', `${mapLabel} — vainqueur`, B, (s) => 1 - s.pMap);
+    for (const line of TOTAL_LINES) {
+      if (line < match.scoreA + match.scoreB) continue; // déjà dépassée
       const po = res.pOver(line);
-      add(`tot${line}:O`, `${mapLabel} — total rounds`, `Plus de ${num(line)}`, po);
-      add(`tot${line}:U`, `${mapLabel} — total rounds`, `Moins de ${num(line)}`, 1 - po);
+      if (po < 0.03 || po > 0.97) continue; // pratiquement jouée
+      add(`tot${line}:O`, `${mapLabel} — total rounds`, `Plus de ${num(line)}`, (s) => s.pOver(line));
+      add(`tot${line}:U`, `${mapLabel} — total rounds`, `Moins de ${num(line)}`, (s) => 1 - s.pOver(line));
     }
     for (const h of [-4.5, -3.5, -2.5, 2.5, 3.5, 4.5]) {
-      add(`hcp${h}:A`, `${mapLabel} — handicap`, `${A} ${fmtLine(h)}`, res.pCover(h));
+      add(`hcp${h}:A`, `${mapLabel} — handicap`, `${A} ${fmtLine(h)}`, (s) => s.pCover(h));
     }
-    add('ot:Y', `${mapLabel} — prolongation`, 'Oui', res.pOT);
-    add('ot:N', `${mapLabel} — prolongation`, 'Non', 1 - res.pOT);
+    add('ot:Y', `${mapLabel} — prolongation`, 'Oui', (s) => s.pOT);
+    add('ot:N', `${mapLabel} — prolongation`, 'Non', (s) => 1 - s.pOT);
   }
   if (res.pSeries != null) {
-    add('series:A', 'Série — vainqueur', A, res.pSeries);
-    add('series:B', 'Série — vainqueur', B, 1 - res.pSeries);
+    add('series:A', 'Série — vainqueur', A, (s) => s.pSeries);
+    add('series:B', 'Série — vainqueur', B, (s) => 1 - s.pSeries);
   }
   return out;
 }
@@ -445,20 +470,35 @@ export function confidence(res, visionConf, nRounds) {
 //  - "value" : cote saisie au-dessus de la cote juste (+ marge) → pari à valeur positive.
 //  - "lean"  : sans cote saisie, sélection nettement favorite (une par marché) avec la
 //              cote minimale à exiger chez le bookmaker.
+// Stabilité :
+//  - probabilité prudente p − k·sd : le pari doit rester bon si les équipes sont un peu
+//    plus proches que ne l'estime le modèle (k plein pour les tendances, moitié pour les
+//    paris VALUE où la cote du bookmaker apporte déjà sa marge) ;
+//  - hystérésis : un pari déjà affiché (opts.prev) reste tant qu'il ne passe pas sous un
+//    seuil de sortie plus bas que le seuil d'entrée, et garde sa place dans son marché.
+export const PICK = { k: 1, kValue: 0.5, leanIn: 0.6, leanOut: 0.55, leanMax: 0.88, leanMaxOut: 0.92, valueOut: 0.5 };
+
 export function recommend(list, oddsById, conf, opts = {}) {
   const minEdge = opts.minEdge ?? 0.04;
+  const prev = opts.prev ?? new Set();
+  const k = opts.k ?? PICK.k;
+  const kv = opts.kValue ?? PICK.kValue;
   const values = [];
   const leans = new Map();
   for (const m of list) {
     const odds = oddsById[m.id];
+    const held = prev.has(m.id);
+    const pc = Math.max(1e-3, m.p - k * (m.sd || 0));
+    const pv = Math.max(1e-3, m.p - kv * (m.sd || 0));
     const fair = 1 / m.p;
-    const target = fair * (1 + minEdge);
-    const ev = evaluateBet(m.p, odds);
-    if (ev && ev.ev >= minEdge) {
-      values.push({ ...m, odds, fair, target, ev: ev.ev, stake: ev.stake * conf, kind: 'value' });
-    } else if (!odds && m.p >= 0.6 && m.p <= 0.88) {
+    const target = (1 / pc) * (1 + minEdge);
+    const ev = evaluateBet(pv, odds);
+    if (ev && ev.ev >= (held ? minEdge * PICK.valueOut : minEdge)) {
+      values.push({ ...m, pc: pv, odds, fair, target: (1 / pv) * (1 + minEdge), ev: ev.ev, stake: ev.stake * conf, kind: 'value' });
+    } else if (!odds && pc >= (held ? PICK.leanOut : PICK.leanIn) && m.p <= (held ? PICK.leanMaxOut : PICK.leanMax)) {
       const cur = leans.get(m.group);
-      if (!cur || m.p > cur.p) leans.set(m.group, { ...m, fair, target, kind: 'lean' });
+      const better = !cur || (held && !cur.held) || (held === cur.held && pc > cur.pc);
+      if (better) leans.set(m.group, { ...m, pc, fair, target, held, kind: 'lean' });
     }
   }
   values.sort((x, y) => y.ev - x.ev);

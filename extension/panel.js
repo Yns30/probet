@@ -1,4 +1,5 @@
-import { analyze, markets, recommend, confidence, evaluateBet } from './engine.js';
+import { analyze, markets, confidence, evaluateBet } from './engine.js';
+import { stablePicks } from './picks.js';
 import { toMatch, describeLog, seriesState } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 
@@ -246,19 +247,24 @@ function facts(m, res, src) {
   return out.slice(0, 5);
 }
 
-function renderPicks(list, conf, mem) {
-  const picks = recommend(list, mem.odds, conf, { minEdge: (settings.edge || 4) / 100, max: 4 });
+function renderPicks(list, conf, mem, m) {
+  mem.picks ??= {};
+  const picks = stablePicks(mem.picks, {
+    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 4,
+    phase: m.phase, round: m.round, mapKey: mem.mapKey,
+  });
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
   if (!picks.length) {
     $('picks').innerHTML = '<li class="none">Rien d’intéressant pour l’instant : ProBet surveille le match. Entrez les cotes de votre bookmaker dans « Tous les marchés » pour détecter les paris à valeur.</li>';
     return;
   }
+  if (picks.some((p) => p.frozen)) $('conf').innerHTML += ' · <span class="frozen">tendances figées pendant le round</span>';
   const bank = Number(settings.bank) || 0;
   $('picks').innerHTML = picks.map((p) => {
     const act = p.kind === 'value'
-      ? `<span>Cote <b>${dec(p.odds)}</b> (juste ${dec(p.fair)})</span><span>Avantage <b>+${dec(p.ev * 100, 1)}%</b></span>
+      ? `<span>Cote <b>${dec(p.odds)}</b> (juste ${dec(p.fair)})</span><span>Avantage prudent <b>+${dec(p.ev * 100, 1)}%</b></span>
          <span>Mise <b>${dec(p.stake * 100, 1)}%</b> de la bankroll${bank ? ` (${Math.round(p.stake * bank)} €)` : ''}</span>`
-      : `<span>À jouer si la cote est ≥ <b>${dec(p.target)}</b></span><span>Cote juste ${dec(p.fair)}</span>`;
+      : `<span>À jouer si la cote est ≥ <b>${dec(p.target)}</b></span><span>Cote juste ${dec(p.fair)}</span>${p.frozen && Math.abs(p.now - p.p) >= 0.03 ? `<span>Maintenant ${pct(p.now)}</span>` : ''}`;
     return `<li class="pick ${p.kind}">
       <div class="g">${esc(p.group)}<span class="badge ${p.kind}">${p.kind === 'value' ? 'VALUE' : 'TENDANCE'}</span></div>
       <div class="p">${pct(p.p)}</div>
@@ -334,7 +340,7 @@ function render() {
   const meta = { ...src.meta, prematchOverride: prematchOverride(), timer: src.timer };
   // Nouvelle map : on repart d'un historique vierge.
   const key = `${src.scoreboard.mapName}|${seriesState(meta.maps, src.scoreboard.mapName).mapNumber}`;
-  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; }
+  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; }
   const m = toMatch(src.scoreboard, meta, mem);
   const res = analyze(m);
 
@@ -353,7 +359,7 @@ function render() {
   renderPre(m, src);
   const list = markets(res, m.names, m);
   const conf = confidence(res, 0.95, m.rounds.length);
-  renderPicks(list, conf, mem);
+  renderPicks(list, conf, mem, m);
   renderMarkets(list, mem);
 }
 

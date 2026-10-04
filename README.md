@@ -61,6 +61,18 @@ Vainqueur du round en cours, vainqueur de la map, total de rounds (plus/moins), 
 
 Pour chaque marché, ProBet donne la **probabilité**, la **cote juste** et la **cote minimale à exiger** chez votre bookmaker. Ouvrez **Tous les marchés** et entrez les cotes de votre bookmaker : les paris à espérance positive apparaissent en tête avec le badge **VALUE**, l'avantage en % et une mise conseillée (quart de Kelly, plafonnée à 5 % de la bankroll).
 
+### Des paris stables
+
+Un pari ne doit pas apparaître et disparaître à chaque kill. ProBet stabilise les propositions de plusieurs façons :
+
+- **Tendances figées pendant le round.** Les paris TENDANCE (sans cote saisie) sont choisis entre les rounds, pendant la pause et l'achat, puis restent affichés jusqu'à la fin du round (mention « tendances figées pendant le round »). Une tendance figée n'est retirée que si la sélection n'est plus favorite. Si la probabilité a nettement bougé depuis, le panneau l'indique (« Maintenant … »).
+- **Paris VALUE en direct.** Dès que vous entrez une cote, le calcul de valeur se fait en temps réel.
+- **Probabilité prudente.** ProBet ne connaît pas exactement l'écart de niveau entre les équipes. Un pari n'est proposé que s'il reste bon quand les équipes sont un peu plus proches que prévu (un écart-type pour les tendances, un demi pour les paris VALUE). L'avantage affiché pour un pari VALUE est cet avantage prudent.
+- **Hystérésis.** Un pari affiché reste tant qu'il ne passe pas sous un seuil de sortie plus bas que le seuil d'entrée : 60 % pour entrer en tendance, 55 % pour sortir ; pour un VALUE, la moitié de l'avantage minimum. Dans un même marché, la sélection affichée garde sa place face à une voisine à peine meilleure.
+- **Lignes de total fixes** (19,5 à 23,5, comme chez les bookmakers), au lieu de lignes qui se déplacent avec le score.
+
+Sur un match simulé, la liste des paris change environ 60 % moins souvent qu'avant.
+
 Dans **Réglages** : bankroll, avantage minimum exigé pour un pari VALUE, et cotes d'avant-match manuelles si vous préférez les vôtres à celles affichées par HLTV.
 
 ## En cas de problème
@@ -89,6 +101,7 @@ extension/
   content.js      lit la page (équipes, format, maps, cotes) et transmet au panneau
   hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases, avant-match)
   engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
+  picks.js        stabilisation des paris affichés (figés pendant le round, hystérésis)
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)
   background.js   ouvre le panneau au clic sur l'icône

@@ -2,6 +2,7 @@ import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
 import { toMatch, describeLog, seriesState } from './hltv.js';
 import { createDemoMatch } from './demo.js';
+import { newJournal, record, backfill, logPicks, summarize } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -30,6 +31,40 @@ function saveSettings() {
     else localStorage.setItem('probet:settings', JSON.stringify(settings));
   } catch { /* stockage indisponible */ }
 }
+
+// ---------- Journal (enregistré localement, exportable) ----------
+
+// Chaque map est stockée sous sa propre clé (« j:… ») : seules les maps modifiées sont réécrites.
+let journal = newJournal();
+const journalDirty = new Set();
+const JKEY = 'j:';
+async function loadJournal() {
+  try {
+    const all = hasChrome ? await chrome.storage.local.get(null)
+      : Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('probet:' + JKEY))
+        .map((k) => [k.slice(7), JSON.parse(localStorage.getItem(k))]));
+    for (const [k, v] of Object.entries(all)) if (k.startsWith(JKEY) && v) journal.maps[k.slice(JKEY.length)] = v;
+  } catch { /* journal vierge */ }
+}
+function saveJournal() {
+  const removed = journal.removed || [];
+  journal.removed = [];
+  const put = {};
+  for (const k of journalDirty) if (journal.maps[k]) put[JKEY + k] = journal.maps[k];
+  journalDirty.clear();
+  try {
+    if (hasChrome) {
+      if (Object.keys(put).length) chrome.storage.local.set(put);
+      if (removed.length) chrome.storage.local.remove(removed.map((k) => JKEY + k));
+    } else {
+      for (const [k, v] of Object.entries(put)) localStorage.setItem('probet:' + k, JSON.stringify(v));
+      for (const k of removed) localStorage.removeItem('probet:' + JKEY + k);
+    }
+  } catch { /* stockage indisponible */ }
+}
+setInterval(saveJournal, 10000);
+addEventListener('visibilitychange', saveJournal);
+addEventListener('pagehide', saveJournal);
 
 // ---------- Sources (onglets HLTV ouverts, ou démo) ----------
 
@@ -256,7 +291,7 @@ function renderPicks(list, conf, mem, m) {
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
   if (!picks.length) {
     $('picks').innerHTML = '<li class="none">Rien d’intéressant pour l’instant : ProBet surveille le match. Entrez les cotes de votre bookmaker dans « Tous les marchés » pour détecter les paris à valeur.</li>';
-    return;
+    return picks;
   }
   if (picks.some((p) => p.frozen)) $('conf').innerHTML += ' · <span class="frozen">tendances figées pendant le round</span>';
   const bank = Number(settings.bank) || 0;
@@ -272,6 +307,7 @@ function renderPicks(list, conf, mem, m) {
       <div class="act">${act}</div>
     </li>`;
   }).join('');
+  return picks;
 }
 
 function renderMarkets(list, mem) {
@@ -359,7 +395,14 @@ function render() {
   renderPre(m, src);
   const list = markets(res, m.names, m);
   const conf = confidence(res, 0.95, m.rounds.length);
-  renderPicks(list, conf, mem, m);
+  const picks = renderPicks(list, conf, mem, m);
+  if (src.matchId && src.matchId !== 'demo') {
+    const jkey = `${src.matchId}|${key}`;
+    record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
+    backfill(journal, src.matchId, src.meta?.maps);
+    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB });
+    for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
+  }
   renderMarkets(list, mem);
 }
 
@@ -370,6 +413,7 @@ $('btnSettings').addEventListener('click', () => {
   $('setOdds1').value = settings.odds1 ? dec(settings.odds1) : '';
   $('setOdds2').value = settings.odds2 ? dec(settings.odds2) : '';
   $('setEdge').value = settings.edge ?? 4;
+  renderJournal();
   $('settings').showModal();
 });
 $('settings').addEventListener('close', () => {
@@ -397,9 +441,38 @@ $('btnDiag').addEventListener('click', async () => {
   setTimeout(() => { $('btnDiag').textContent = 'Copier le diagnostic'; }, 2000);
 });
 
+function renderJournal() {
+  const sm = summarize(journal);
+  const lines = [`<b>${sm.maps}</b> map${sm.maps > 1 ? 's' : ''} enregistrée${sm.maps > 1 ? 's' : ''} (${sm.finished} terminée${sm.finished > 1 ? 's' : ''}), <b>${sm.rounds.n}</b> rounds.`];
+  if (sm.rounds.n >= 20) lines.push(`Rounds : écart quadratique ${dec(sm.rounds.brier, 3)} (0,25 = pile ou face, plus bas = meilleur).`);
+  if (sm.map.vsHltv?.n >= 10) lines.push(`Map : ProBet ${dec(sm.map.vsHltv.probet, 3)} contre HLTV ${dec(sm.map.vsHltv.hltv, 3)} (plus bas = meilleur).`);
+  const pk = (x, name) => x.n ? `${name} : ${x.won}/${x.n} gagnés (${pct(x.won / x.n)}, annoncé ${pct(x.expected)})${x.units != null ? `, ${x.units >= 0 ? '+' : ''}${dec(x.units, 1)} unités` : ''}.` : null;
+  for (const l of [pk(sm.picks.lean, 'Tendances'), pk(sm.picks.value, 'Paris VALUE')]) if (l) lines.push(l);
+  if (sm.maps && sm.finished < 10) lines.push('Les chiffres deviennent parlants après une dizaine de maps terminées.');
+  $('journalSummary').innerHTML = lines.map((l) => `<span>${l}</span>`).join('');
+}
+$('btnExport').addEventListener('click', () => {
+  saveJournal();
+  const data = {
+    app: 'probet', version: hasChrome ? chrome.runtime.getManifest().version : 'dev',
+    exported: new Date().toISOString(), summary: summarize(journal), journal,
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `probet-journal-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+$('btnClearJournal').addEventListener('click', () => {
+  if (!confirm('Effacer tout le journal ? Exportez-le d’abord si vous voulez le garder.')) return;
+  journal = { ...newJournal(), removed: Object.keys(journal.maps) };
+  saveJournal();
+  renderJournal();
+});
+
 // ---------- Démarrage ----------
 
 await loadSettings();
+await loadJournal();
 await discover();
 setInterval(() => {
   // Rafraîchit les méta-données (maps, cotes) et l'indicateur d'activité.

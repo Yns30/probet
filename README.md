@@ -75,6 +75,21 @@ Sur un match simulé, la liste des paris change environ 60 % moins souvent qu'av
 
 Dans **Réglages** : bankroll, avantage minimum exigé pour un pari VALUE, et cotes d'avant-match manuelles si vous préférez les vôtres à celles affichées par HLTV.
 
+## Journal des matchs (mesurer la justesse)
+
+Pendant que vous suivez un match, ProBet enregistre sur votre PC, sans aucune requête :
+
+- au début de chaque round : score, côtés, achats, équipement, ses probabilités et celle de HLTV ;
+- à chaque kill ou pose de bombe : joueurs en vie, PV, armes, et les probabilités du moment ;
+- le vainqueur de chaque round et le score final de la map (complété depuis la page si vous l'avez manquée) ;
+- chaque pari proposé (TENDANCE ou VALUE, avec la cote saisie), réglé automatiquement à la fin.
+
+Dans **Réglages → Journal des matchs** : le bilan (justesse des prévisions, ProBet contre HLTV, paris gagnés par rapport à l'annoncé), un bouton **Exporter le journal** (fichier `.json`) et un bouton **Effacer**. Envoyez l'export pour faire recalibrer le modèle sur de vrais matchs : les chiffres deviennent parlants après une dizaine de maps terminées.
+
+Analyse d'un export (Node 20+) : `node tools/analyse-journal.mjs probet-journal-AAAA-MM-JJ.json`. L'analyse affiche le calibrage par tranche (« annoncé 70 % → observé … »), les paris par marché, et rejoue le modèle actuel sur les rounds enregistrés pour mesurer l'effet d'une modification.
+
+Le score utilisé est l'écart quadratique moyen (score de Brier) : 0,25 correspond à un pile ou face, et plus il est bas, meilleures sont les prévisions.
+
 ## En cas de problème
 
 - **« En attente des données live »** : le match n'a peut-être pas commencé. Sinon, rechargez la page HLTV : l'extension doit être chargée avant le scoreboard.
@@ -102,8 +117,10 @@ extension/
   hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases, avant-match)
   engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
   picks.js        stabilisation des paris affichés (figés pendant le round, hystérésis)
+  journal.js      journal des matchs : prévisions, résultats, paris réglés, bilan
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)
   background.js   ouvre le panneau au clic sur l'icône
+tools/            analyse-journal.mjs : analyse d'un export du journal
 test/             tests (npm test, Node 20+) ; test/fixtures : extrait réel d'une page de match HLTV
 ```

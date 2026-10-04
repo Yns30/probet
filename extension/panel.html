@@ -93,6 +93,13 @@
       </div>
       <p class="hint">Par défaut, ProBet utilise les cotes des bookmakers affichées sur la page HLTV pour estimer la force des équipes avant les premiers rounds. Saisissez vos propres cotes pour les remplacer.</p>
       <label>Avantage minimum pour un pari VALUE (%) <input id="setEdge" type="number" min="1" max="20" step="0.5" value="4"></label>
+      <h3>Journal des matchs</h3>
+      <p class="hint">ProBet enregistre sur votre PC, round par round, ses prévisions, celles de HLTV, les résultats et les paris proposés. Exportez le journal pour mesurer et améliorer la justesse du modèle.</p>
+      <p id="journalSummary" class="journal"></p>
+      <div class="row">
+        <button type="button" id="btnExport">Exporter le journal</button>
+        <button type="button" id="btnClearJournal" class="ghost">Effacer</button>
+      </div>
       <menu>
         <button type="button" id="btnDiag">Copier le diagnostic</button>
         <button value="ok" class="primary">Fermer</button>

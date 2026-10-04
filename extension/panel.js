@@ -146,7 +146,7 @@ function renderBoard(m) {
   $('roundInfo').innerHTML = bits.filter(Boolean).join('<br>');
 }
 
-const validHltv = (h) => (h && h.p1 >= 0 && h.p1 <= 1 ? h : null);
+const validHltv = (h) => (h && h.p1 >= 0 && h.p1 <= 1 && h.p2 <= 1 ? h : null);
 
 function bar(title, p, [A, B], ref) {
   const a = Math.round(p * 100);
@@ -161,7 +161,9 @@ function renderProbs(m, res, src) {
   let html = '';
   if (res.pRound != null) html += bar(`Round ${res.round}`, res.pRound, m.names);
   const hp = validHltv(src.meta?.hltvProb);
-  const ref = hp ? `Proba live affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)}` : '';
+  const ref = !hp ? '' : hp.oriented === false
+    ? `Proba live affichée par HLTV : ${pct(hp.p1)} / ${pct(hp.p2)} (équipes non identifiées)`
+    : `Proba live affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)} · ${esc(m.names[1])} ${pct(hp.p2)}`;
   html += bar(`Map ${m.mapNumber}`, res.over ? (res.over === 'A' ? 1 : 0) : res.pMap, m.names, ref);
   if (res.pSeries != null) html += bar(`Série BO${m.bestOf}`, res.pSeries, m.names);
   $('bars').innerHTML = html;
@@ -292,9 +294,6 @@ function renderPre(m, src) {
   }
   const done = (meta.maps || []).filter((mp) => Number.isInteger(mp.s1) && Number.isInteger(mp.s2) && (mp.s1 >= 13 || mp.s2 >= 13));
   if (done.length) items.push(`Maps déjà jouées prises en compte : ${done.map((mp) => `${esc(mp.name)} ${mp.s1}-${mp.s2}`).join(', ')}`);
-  const f1 = meta.team1?.form, f2 = meta.team2?.form;
-  if (f1 && f2) items.push(`Forme 3 mois : ${esc(A)} ${f1.won}V-${f1.lost}D · ${esc(B)} ${f2.won}V-${f2.lost}D`);
-  if (meta.h2h && (meta.h2h.w1 || meta.h2h.w2)) items.push(`Face-à-face : ${esc(A)} ${meta.h2h.w1} – ${meta.h2h.w2} ${esc(B)}`);
   $('pre').innerHTML = items.map((t) => `<li>${t}</li>`).join('');
 }
 

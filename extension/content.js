@@ -24,23 +24,37 @@
   };
 
   // Probabilité de victoire affichée par HLTV (si présente) : recherche par le texte.
+  // Probabilité live affichée par HLTV. L'ordre des pourcentages dans le widget ne suit pas
+  // forcément équipe 1 / équipe 2 : chaque pourcentage est rattaché au nom ou logo d'équipe
+  // le plus proche qui le précède (ou le suit) dans le widget.
   function hltvWinProb() {
+    const t1 = (state.meta?.team1?.name || document.querySelector('#scoreboardElement')?.dataset.team1Name || '').toLowerCase();
+    const t2 = (state.meta?.team2?.name || document.querySelector('#scoreboardElement')?.dataset.team2Name || '').toLowerCase();
     const labels = [...document.querySelectorAll('div, span, h2, h3')]
       .filter((el) => el.childElementCount === 0 && /win probability/i.test(el.textContent));
     for (const label of labels) {
       let box = label.parentElement;
       for (let i = 0; i < 4 && box; i++, box = box.parentElement) {
-        // Lecture élément par élément pour ne pas coller deux nombres voisins.
-        const nums = [...box.querySelectorAll('*')]
-          .filter((e) => e.childElementCount === 0)
-          .map((e) => /^(\d{1,3}(?:[.,]\d+)?)\s*%$/.exec(e.textContent.trim()))
-          .filter(Boolean).map((m) => parseFloat(m[1].replace(',', '.')))
-          .filter((x) => x >= 0 && x <= 100);
-        if (nums.length >= 1) {
-          const p1 = nums[0] / 100;
-          const p2 = nums.length >= 2 && Math.abs(nums[0] + nums[1] - 100) < 1.5 ? nums[1] / 100 : 1 - p1;
-          return { p1, p2 };
+        const seq = [];
+        for (const e of box.querySelectorAll('*')) {
+          if (e.childElementCount) continue;
+          const name = (e.tagName === 'IMG' ? (e.alt || e.title) : e.textContent).trim().toLowerCase();
+          const m = /^(\d{1,3}(?:[.,]\d+)?)\s*%$/.exec(name);
+          if (m) { const v = parseFloat(m[1].replace(',', '.')); if (v >= 0 && v <= 100) seq.push({ v }); }
+          else if (t1 && name === t1) seq.push({ team: 1 });
+          else if (t2 && name === t2) seq.push({ team: 2 });
         }
+        const nums = seq.filter((x) => x.v != null);
+        if (!nums.length) continue;
+        // Équipe associée au premier pourcentage
+        const idx = seq.indexOf(nums[0]);
+        const before = seq.slice(0, idx).reverse().find((x) => x.team);
+        const after = seq.slice(idx + 1).find((x) => x.team);
+        const firstTeam = before?.team ?? after?.team ?? 1;
+        const a = nums[0].v / 100;
+        const b = nums.length >= 2 && Math.abs(nums[0].v + nums[1].v - 100) < 1.5 ? nums[1].v / 100 : 1 - a;
+        const p1 = firstTeam === 1 ? a : b;
+        return { p1, p2: 1 - p1, oriented: Boolean(before || after), html: box.outerHTML.slice(0, 2500) };
       }
     }
     return null;

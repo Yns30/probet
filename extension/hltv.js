@@ -199,7 +199,7 @@ export function oddsToProb(rows) {
 
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 // Taux de victoire sur une map, rétréci vers 50 % selon le nombre de maps jouées.
-const shrunk = (w, n) => (w != null && n ? logit(clamp((w * n + 0.5 * 6) / (n + 6), 0.05, 0.95)) : null);
+const shrunk = (w, n) => (w != null && n ? logit(clamp((w * n + 0.5 * 6) / (n + 6), 0.05, 0.95)) : 0); // inconnu → 50 %
 
 // Probabilité que l'équipe 1 gagne la série / la map en cours, avant les rounds joués.
 // Sources, par ordre de fiabilité : cotes des bookmakers, points VRS (sinon classement HLTV),
@@ -219,6 +219,18 @@ export function pagePrior(meta = {}, mapName, bestOf = 1) {
     parts.push({ x: clamp((t1.rating - t2.rating) * 3, -0.6, 0.6), w: 0.35 });
     sources.push(`Rating moyen 3 mois : ${t1.rating.toFixed(2)} contre ${t2.rating.toFixed(2)}`);
   }
+  // Face-à-face et forme : signaux plus bruités (effectifs qui changent), poids faibles.
+  const h = meta.h2h;
+  if (h && h.w1 + h.w2 >= 3) {
+    parts.push({ x: logit((h.w1 + 5) / (h.w1 + h.w2 + 10)), w: 0.25 });
+    sources.push(`Face-à-face : ${h.w1}-${h.w2}`);
+  }
+  const f1 = t1.form, f2 = t2.form;
+  if (f1 && f2 && f1.won + f1.lost >= 3 && f2.won + f2.lost >= 3) {
+    const rate = (f) => (f.won + 3) / (f.won + f.lost + 6);
+    parts.push({ x: logit(rate(f1)) - logit(rate(f2)), w: 0.2 });
+    sources.push(`Forme 3 mois : ${f1.won}V-${f1.lost}D contre ${f2.won}V-${f2.lost}D`);
+  }
   const pOdds = meta.prematchOverride ?? oddsToProb(meta.odds);
   let xSeries = null;
   if (parts.length) xSeries = parts.reduce((t, p) => t + p.x * p.w, 0) / parts.reduce((t, p) => t + p.w, 0);
@@ -233,9 +245,9 @@ export function pagePrior(meta = {}, mapName, bestOf = 1) {
   const ms = meta.mapStats?.[normalizeMap(mapName)];
   if (ms) {
     const a = shrunk(ms.w1, ms.n1), b = shrunk(ms.w2, ms.n2);
-    if (a != null && b != null) {
+    if (a !== 0 || b !== 0) {
       xMap += 0.5 * (a - b);
-      sources.push(`${normalizeMap(mapName)} sur 3 mois : ${Math.round(ms.w1 * 100)} % (${ms.n1} maps) contre ${Math.round(ms.w2 * 100)} % (${ms.n2} maps)`);
+      sources.push(`${normalizeMap(mapName)} sur 3 mois : ${ms.w1 != null ? Math.round(ms.w1 * 100) + ' %' : '—'} (${ms.n1 || 0} maps) contre ${ms.w2 != null ? Math.round(ms.w2 * 100) + ' %' : '—'} (${ms.n2 || 0} maps)`);
     }
   }
   return { pSeries, pMap: sig(xMap), sources, fromOdds: pOdds != null };

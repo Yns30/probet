@@ -249,3 +249,27 @@ test('diagnostic réel (round 12, bombe posée) : chrono de bombe et niveau des 
   const late = analyze(toMatch({ ...diag.scoreboard, roundTimeRemainingMS: 8000 }, diag.meta, { econ: {} }));
   assert.ok(late.pRound < 0.02, `${late.pRound}`);
 });
+
+test('diagnostic réel (Vitality-NaVi, Anubis 4-0) : cohérent avec HLTV (87 %)', () => {
+  const pl = (nick, dbId, k, d, a, w, kast, adr, eq, kit = false) => ({ nick, name: nick, dbId, score: k, deaths: d, assists: a, alive: true, hp: 100, primaryWeapon: w, kevlar: true, helmet: true, hasDefusekit: kit, advancedStats: { kast }, damagePrRound: adr, equipmentValue: eq, money: 1000 });
+  const sb = {
+    TERRORIST: [pl('w0nderful', 20127, 3, 4, 1, 'awp', 4, 79.4, 6850), pl('b1t', 18987, 2, 4, 1, 'ak47', 4, 59.8, 5100), pl('iM', 14759, 2, 4, 0, 'ak47', 3, 26.8, 5100), pl('Aleksib', 9816, 1, 4, 0, 'ak47', 3, 20, 5100), pl('makazze', 22673, 0, 4, 0, 'ak47', 3, 17, 4800)],
+    CT: [pl('mezii', 18462, 7, 1, 0, 'm4a1_silencer', 5, 129.6, 5800, true), pl('apEX', 7322, 4, 1, 2, 'ak47', 5, 93.6, 5600, true), pl('ZywOo', 11893, 4, 1, 1, 'awp', 5, 82.4, 7650, true), pl('flameZ', 16693, 4, 3, 0, 'm4a1', 5, 54, 5500, true), pl('ropz', 11816, 1, 2, 2, 'ak47', 5, 38.8, 5500)],
+    ctMatchHistory: { firstHalf: [1, 2, 3, 4].map((r) => ({ type: r === 4 ? 'Bomb_Defused' : 'CTs_Win', roundOrdinal: r })), secondHalf: [] },
+    terroristMatchHistory: { firstHalf: [1, 2, 3, 4].map((r) => ({ type: 'lost', roundOrdinal: r })), secondHalf: [] },
+    bombPlanted: false, mapName: 'de_anubis', terroristTeamName: 'Natus Vincere', ctTeamName: 'Vitality', currentRound: 5, currentRoundState: 'started',
+    counterTerroristScore: 4, terroristScore: 0, ctTeamId: 9565, tTeamId: 4608, frozen: false, live: true,
+    ctInitialEquipmentValue: 30050, tInitialEquipmentValue: 26950, roundTimeRemainingMS: 110971,
+  };
+  const meta = {
+    team1: { name: 'Vitality', id: 9565, rank: 2, vrs: 1922, rating: 1.107, form: { won: 12, lost: 6 } },
+    team2: { name: 'Natus Vincere', id: 4608, rank: 10, vrs: 1506, rating: 1.028, form: { won: 4, lost: 5 } },
+    bestOf: 3, maps: [{ name: 'Anubis', s1: null, s2: null, halves: [] }], mapStats: { anubis: { w1: 0.43, n1: 7, w2: null, n2: 1 } },
+    odds: [], h2h: { w1: 22, w2: 3 },
+  };
+  const m = toMatch(sb, meta, { econ: {} });
+  assert.ok(m.pre.sources.some((s) => s.includes('Face-à-face')));
+  assert.ok(m.pre.sources.some((s) => s.includes('anubis')), 'stats de map utilisées même si une équipe a < 3 maps');
+  const res = analyze(m);
+  assert.ok(Math.abs(res.pMap - 0.874) < 0.06, `map ${res.pMap} vs HLTV 0.874`);
+});

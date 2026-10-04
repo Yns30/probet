@@ -142,6 +142,7 @@ function renderBoard(m) {
   if (m.phase !== 'map_over') bits.push(`Round ${m.scoreA + m.scoreB + 1}`);
   bits.push(m.bombPlanted && m.phase === 'bomb_planted' ? '<span class="bomb">Bombe posée</span>' : PHASES[m.phase] || '');
   if (m.timer != null) bits.push(`${Math.floor(m.timer / 60)}:${String(m.timer % 60).padStart(2, '0')}`);
+  if (m.bombTimer != null) bits.push(`<span class="bomb">💣 ${Math.ceil(m.bombTimer)} s</span>`);
   $('roundInfo').innerHTML = bits.filter(Boolean).join('<br>');
 }
 
@@ -160,7 +161,7 @@ function renderProbs(m, res, src) {
   let html = '';
   if (res.pRound != null) html += bar(`Round ${res.round}`, res.pRound, m.names);
   const hp = validHltv(src.meta?.hltvProb);
-  const ref = hp ? `Probabilité affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)}` : '';
+  const ref = hp ? `Proba live affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)}` : '';
   html += bar(`Map ${m.mapNumber}`, res.over ? (res.over === 'A' ? 1 : 0) : res.pMap, m.names, ref);
   if (res.pSeries != null) html += bar(`Série BO${m.bestOf}`, res.pSeries, m.names);
   $('bars').innerHTML = html;
@@ -202,8 +203,9 @@ function facts(m, res, src) {
   const a = m.aliveA, b = m.aliveB;
   if (live && a != null && b != null) {
     if (m.bombPlanted) out.push(`Bombe posée : ${m.aSide === 'T' ? A : B} défend la bombe en ${m.aSide === 'T' ? a : b}v${m.aSide === 'T' ? b : a}`);
-    if (a === 1 && b >= 1) out.push(`Clutch ${A} 1v${b} (${m.hpA} PV)`);
-    else if (b === 1 && a >= 1) out.push(`Clutch ${B} 1v${a} (${m.hpB} PV)`);
+    const who = (list) => { const p = list.find((x) => x.alive); return p ? `${p.nick}${p.score != null ? ` (${p.score}-${p.deaths} sur la map${p.rating ? `, rating ${p.rating.toFixed(2)}` : ''})` : ''}` : ''; };
+    if (a === 1 && b >= 1) out.push(`Clutch ${A} 1v${b} : ${who(m.players.A)}, ${m.hpA} PV`);
+    else if (b === 1 && a >= 1) out.push(`Clutch ${B} 1v${a} : ${who(m.players.B)}, ${m.hpB} PV`);
     else if (Math.abs(a - b) >= 2) out.push(`${a > b ? A : B} en supériorité numérique ${Math.max(a, b)}v${Math.min(a, b)}`);
   }
   if ((m.phase === 'freezetime' || live) && m.buyA && m.buyB && m.buyA !== m.buyB) {
@@ -224,9 +226,10 @@ function facts(m, res, src) {
   let k = 0;
   for (let i = known.length - 1; i >= 0 && known[i].winner === known[known.length - 1].winner; i--) k++;
   if (k >= 3) out.push(`${known[known.length - 1].winner === 'A' ? A : B} enchaîne ${k} rounds`);
-  const hp = validHltv(src.meta?.hltvProb);
-  if (hp && !res.over && Math.abs(hp.p1 - res.pMap) >= 0.1) {
-    out.push(`Écart avec HLTV : ${A} ${pct(res.pMap)} (ProBet) contre ${pct(hp.p1)} (HLTV)`);
+  const all = [...m.players.A.map((p) => ({ ...p, t: A })), ...m.players.B.map((p) => ({ ...p, t: B }))].filter((p) => p.rating != null);
+  if (m.scoreA + m.scoreB >= 5 && all.length) {
+    const best = all.sort((x, y) => y.rating - x.rating)[0];
+    out.push(`Meilleur joueur de la map : ${best.nick} (${best.t}) ${best.score}-${best.deaths}, ${Math.round(best.damagePrRound || 0)} ADR, rating ${best.rating.toFixed(2)}`);
   }
   for (const f of m.facts || []) out.push(`HLTV : ${f}`);
   return out.slice(0, 5);

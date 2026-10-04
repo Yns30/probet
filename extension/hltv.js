@@ -139,6 +139,27 @@ export function nextBuys(pA, pB, rounds, nextRound) {
   };
 }
 
+// ---------- Niveau des joueurs ----------
+
+// Rating du joueur sur la map en cours (approximation du rating HLTV 2.0) à partir des
+// stats avancées du scorebot : kills, morts, assists, KAST, ADR.
+export function matchRating(p, rounds) {
+  if (!rounds || rounds < 1 || p.score == null || p.deaths == null) return null;
+  const kpr = (p.score || 0) / rounds, dpr = (p.deaths || 0) / rounds, apr = (p.assists || 0) / rounds;
+  const kast = Math.min(1, (p.advancedStats?.kast ?? rounds * 0.7) / rounds);
+  const adr = p.damagePrRound ?? 70;
+  const impact = 2.13 * kpr + 0.42 * apr - 0.41;
+  return 0.73 * kast + 0.3591 * kpr - 0.5329 * dpr + 0.2372 * impact + 0.0032 * adr + 0.1587;
+}
+
+// Facteur de niveau (≈ 0,85 à 1,15) : rating 3 mois de la page, ajusté par la forme du jour.
+export function formFactor(p, rounds, ratings = {}) {
+  const base = ratings[p.dbId] ?? 1;
+  const today = matchRating(p, rounds);
+  const r = today == null ? base : (base * 12 + today * rounds) / (12 + rounds);
+  return Math.max(0.85, Math.min(1.15, 1 + 0.3 * (r - 1)));
+}
+
 // ---------- Méta-données de la page ----------
 
 const norm = (s) => (s ? String(s).toLowerCase().replace(/[^a-z0-9]/g, '') : '');
@@ -270,11 +291,12 @@ const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
 export function toMatch(sb, meta = {}, mem = {}) {
   const ctA = ctIsTeam1(sb, meta);
   const aSide = ctA ? 'CT' : 'T';
-  const pA = (ctA ? sb.CT : sb.TERRORIST) || [];
-  const pB = (ctA ? sb.TERRORIST : sb.CT) || [];
   const scoreA = (ctA ? sb.counterTerroristScore : sb.terroristScore) ?? 0;
   const scoreB = (ctA ? sb.terroristScore : sb.counterTerroristScore) ?? 0;
   const played = scoreA + scoreB;
+  const withForm = (list) => (list || []).map((p) => ({ ...p, form: formFactor(p, played, meta.playerRatings), rating: matchRating(p, played) }));
+  const pA = withForm(ctA ? sb.CT : sb.TERRORIST);
+  const pB = withForm(ctA ? sb.TERRORIST : sb.CT);
   const current = Number.isInteger(sb.currentRound) && sb.currentRound > 0 ? sb.currentRound : played + 1;
 
   // Historique : vainqueur et côté de chaque round.
@@ -354,6 +376,8 @@ export function toMatch(sb, meta = {}, mem = {}) {
     timer: phase !== 'live' ? null
       : Number.isFinite(sb.roundTimeRemainingMS) ? Math.round(sb.roundTimeRemainingMS / 1000)
         : Number.isInteger(meta.timer) ? meta.timer : null,
+    // Bombe posée : le chrono du scorebot devient le compte à rebours de la bombe (40 s).
+    bombTimer: phase === 'bomb_planted' && Number.isFinite(sb.roundTimeRemainingMS) ? sb.roundTimeRemainingMS / 1000 : null,
     equipA: Number.isFinite(initA) ? initA : null, equipB: Number.isFinite(initB) ? initB : null,
     facts: [...(sb.matchFacts || []), ...(sb.ctTeamFacts || []), ...(sb.tTeamFacts || [])]
       .map((f) => (typeof f === 'string' ? f : f?.text || f?.description || null)).filter(Boolean),

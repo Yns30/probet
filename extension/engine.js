@@ -114,7 +114,7 @@ const WEAPONS = {
 };
 export const weaponFactor = (w) => WEAPONS[norm(w)] ?? 0.42; // sinon : pistolet de départ
 export const quality = (p) => weaponFactor(p.primaryWeapon) * (p.helmet ? 1 : p.kevlar ? 0.9 : 0.75);
-export const hpUnit = (p) => 0.35 + 0.65 * clamp(p.hp ?? 100, 1, 100) / 100;
+export const hpUnit = (p) => (0.35 + 0.65 * clamp(p.hp ?? 100, 1, 100) / 100) * (p.form ?? 1); // form : niveau du joueur
 export const playerUnit = (p) => hpUnit(p) * quality(p);
 const aliveOf = (players) => (players || []).filter((p) => p.alive !== false);
 const avg = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : 0);
@@ -123,7 +123,7 @@ const avg = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : 0);
 // 4v2 ≈ 87 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % (chaque joueur supplémentaire pèse davantage).
 const curve = (D) => 0.85 * D + 0.05 * D * Math.abs(D);
 
-// s : { aSide, aliveA, aliveB, playersA, playersB, hpA, hpB, bombPlanted, timer, buyA, buyB }
+// s : { aSide, aliveA, aliveB, playersA, playersB, hpA, hpB, bombPlanted, bombTimer, timer, buyA, buyB }
 export function liveRoundProb(s, base) {
   const ctSideA = s.aSide === 'CT';
   const aliveCT = ctSideA ? s.aliveA : s.aliveB;
@@ -157,8 +157,14 @@ export function liveRoundProb(s, base) {
   const kit = (plCT || []).some((p) => p.alive !== false && (p.hasDefuseKit || p.hasDefusekit));
   let x;
   if (s.bombPlanted) {
-    if (aliveT === 0) x = (kit ? 0.9 : -0.2) + 0.35 * (aliveCT - 1); // défuse contre la montre
-    else x = -0.75 + 0.9 * curve(D) + (kit ? 0.3 : 0);
+    // Temps restant avant l'explosion contre temps de désamorçage (10 s, 5 s avec kit).
+    const slack = s.bombTimer != null ? s.bombTimer - (kit ? 5 : 10) : null;
+    if (slack != null && slack <= 0) return pFromCT(0.01);
+    if (aliveT === 0) x = (kit ? 1.5 : 0.9) + 0.35 * (aliveCT - 1) - (slack != null && slack < 5 ? (5 - slack) * 0.35 : 0);
+    else {
+      x = -0.75 + 0.9 * curve(D) + (kit ? 0.3 : 0);
+      if (slack != null && slack < 15) x -= (15 - slack) * 0.12; // il faut gagner les duels ET désamorcer
+    }
   } else {
     x = 0.5 * logit(ct) + curve(D);
     if (s.timer != null && s.timer < 30) x += (30 - s.timer) * 0.06; // les T doivent poser

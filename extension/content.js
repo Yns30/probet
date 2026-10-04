@@ -84,6 +84,20 @@
     } catch { return null; }
   }
 
+  // Rating 3 mois de chaque joueur (identifiant HLTV = dbId du scorebot).
+  function playerRatings() {
+    const out = {};
+    for (const attr of ['data-team1-players-data', 'data-team2-players-data']) {
+      try {
+        const raw = document.querySelector('.lineups-compare-container')?.getAttribute(attr);
+        for (const p of Object.values(JSON.parse(raw || '{}'))) {
+          if (p.playerId && typeof p.numericRating === 'number') out[p.playerId] = p.numericRating;
+        }
+      } catch { /* bloc absent */ }
+    }
+    return out;
+  }
+
   function form(i) {
     const box = document.querySelectorAll('[data-past-matches-core] .past-matches-box')[i];
     if (!box) return null;
@@ -141,6 +155,7 @@
       bestOf: (/best of (\d)/i.exec(format || '') || [])[1] ? Number(/best of (\d)/i.exec(format)[1]) : null,
       maps,
       mapStats: mapStats(),
+      playerRatings: playerRatings(),
       odds,
       h2h: h2h.length >= 3 ? { w1: int(txt(h2h[0])), w2: int(txt(h2h[2])) } : null,
       hltvProb: hltvWinProb(),

@@ -38,8 +38,9 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 | Score, round, côtés CT/T, map | Calcul exact jusqu'à la fin de la map (MR12 + prolongations MR3), avec l'avantage CT/T propre à chaque map |
 | Historique des rounds | Force relative des équipes, mise à jour après chaque round ; effet pistol / anti-eco |
 | Pour chaque survivant : **PV, arme, armure, kit** | Probabilité du round en cours. Un 4v1 avec 6 PV et un pistolet ne vaut pas un 4v1 en pleine santé. La courbe est calée sur les taux pro : 5v4 ≈ 71 %, 5v3 ≈ 86 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % |
-| Bombe posée, kit de désamorçage | Probabilité post-plant (retake / défense de la bombe) |
-| Chrono du round | Pression sur les T en fin de round |
+| Bombe posée, **compte à rebours de la bombe**, kit | Probabilité post-plant : le CT doit gagner ses duels ET avoir le temps de désamorcer (10 s, 5 s avec kit) |
+| Stats avancées de chaque joueur (K-D, KAST, ADR, assists) + rating 3 mois | Niveau de chaque survivant dans les clutchs (forme du jour mélangée au niveau habituel) ; meilleur joueur de la map |
+| Chrono du round, équipement officiel de début de round | Pression sur les T en fin de round ; type d'achat exact (eco / force / full) et achat probable au round suivant selon l'issue |
 | Armes et argent | Type d'achat du round (eco / force / demi / full) et achat probable au round suivant |
 | Probabilité live affichée par HLTV | Comparaison avec ProBet ; les écarts importants sont signalés |
 

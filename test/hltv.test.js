@@ -232,3 +232,20 @@ test('économie du round suivant selon l’issue du round', async () => {
   assert.equal(nb.B.B, 'full');
   assert.equal(nextBuys(broke, rich, rounds, 13), null); // mi-temps : argent remis à zéro
 });
+
+test('diagnostic réel (round 12, bombe posée) : chrono de bombe et niveau des joueurs', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { matchRating } = await import('../extension/hltv.js');
+  const diag = JSON.parse(readFileSync(new URL('./fixtures/diag-g2-1win-r12-bomb.json', import.meta.url)));
+  const m = toMatch(diag.scoreboard, diag.meta, { econ: {} });
+  assert.equal(m.phase, 'bomb_planted');
+  assert.ok(Math.abs(m.bombTimer - 32.8) < 0.1);
+  assert.deepEqual([m.buyA, m.buyB, m.aliveA, m.aliveB], ['full', 'full', 1, 1]);
+  const hunter = m.players.A.find((p) => p.nick === 'huNter-');
+  assert.ok(matchRating(hunter, 11) > 1.4, 'huNter- en forme (11-8, 123 ADR)');
+  const res = analyze(m);
+  assert.ok(res.pRound > 0.15 && res.pRound < 0.45, `1v1 post-plant sans kit : ${res.pRound}`);
+  // Plus assez de temps pour désamorcer sans kit : le round est perdu pour les CT
+  const late = analyze(toMatch({ ...diag.scoreboard, roundTimeRemainingMS: 8000 }, diag.meta, { econ: {} }));
+  assert.ok(late.pRound < 0.02, `${late.pRound}`);
+});

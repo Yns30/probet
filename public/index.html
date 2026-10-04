@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ProBet CS2</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">ProBet <span>CS2</span></div>
+    <div id="status" class="status idle"><i></i><span>En attente</span></div>
+    <div class="actions">
+      <button id="btnCapture" class="primary">Connecter le stream</button>
+      <button id="btnDemo">Démo</button>
+      <button id="btnSettings" aria-label="Réglages">Réglages</button>
+    </div>
+  </header>
+
+  <video id="video" muted playsinline hidden></video>
+
+  <section class="board" aria-label="Score">
+    <div class="team a">
+      <div class="tname"><span id="nameA">Équipe A</span><em id="sideA" class="side"></em></div>
+      <div id="aliveA" class="alive"></div>
+    </div>
+    <div class="mid">
+      <div class="score"><b id="scoreA">0</b><small>:</small><b id="scoreB">0</b></div>
+      <div id="roundInfo" class="rinfo">—</div>
+    </div>
+    <div class="team b">
+      <div class="tname"><em id="sideB" class="side"></em><span id="nameB">Équipe B</span></div>
+      <div id="aliveB" class="alive"></div>
+    </div>
+  </section>
+
+  <main class="grid">
+    <section class="card picks">
+      <header><h2>Paris à jouer</h2><span id="conf" class="conf"></span></header>
+      <ol id="picks"></ol>
+    </section>
+
+    <section class="card probs">
+      <header><h2>Probabilités live</h2></header>
+      <div id="bars"></div>
+      <figure class="spark">
+        <figcaption>Victoire sur la map — <span id="sparkLabel"></span></figcaption>
+        <div class="sparkwrap">
+          <svg id="spark" viewBox="0 0 300 80" preserveAspectRatio="none" role="img" aria-label="Évolution de la probabilité de victoire sur la map"></svg>
+          <div id="sparkTip" class="tip" hidden></div>
+        </div>
+      </figure>
+      <div id="extra" class="extra"></div>
+    </section>
+
+    <section class="card feed">
+      <header><h2>Ce que voit l'assistant</h2></header>
+      <ul id="facts"></ul>
+      <ul id="events"></ul>
+    </section>
+
+    <section class="card markets">
+      <details id="marketsBox">
+        <summary><h2>Tous les marchés</h2><span>entrez les cotes de votre bookmaker pour détecter la value</span></summary>
+        <table>
+          <thead><tr><th>Marché</th><th>Sélection</th><th>Proba</th><th>Cote juste</th><th>Votre cote</th><th>EV</th></tr></thead>
+          <tbody id="marketRows"></tbody>
+        </table>
+      </details>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h2>Réglages du match</h2>
+      <div class="row">
+        <label>Équipe A <input id="setNameA" placeholder="détectée automatiquement"></label>
+        <label>Équipe B <input id="setNameB" placeholder="détectée automatiquement"></label>
+      </div>
+      <div class="row">
+        <label>Format
+          <select id="setBo"><option value="1">BO1</option><option value="3" selected>BO3</option><option value="5">BO5</option></select>
+        </label>
+        <label>Map <input id="setMap" placeholder="ex. mirage"></label>
+      </div>
+      <div class="row">
+        <label>Cote pré-match A <input id="setOddsA" type="number" step="0.01" min="1.01" placeholder="ex. 1.65"></label>
+        <label>Cote pré-match B <input id="setOddsB" type="number" step="0.01" min="1.01" placeholder="ex. 2.20"></label>
+      </div>
+      <p class="hint">Les cotes d'avant-match (vainqueur de la série) calibrent la force des équipes avant les premiers rounds.</p>
+      <div class="row">
+        <label>Lecture toutes les (s) <input id="setInterval" type="number" min="2" max="60" value="6"></label>
+        <label>Bankroll (€) <input id="setBank" type="number" min="0" step="10" placeholder="optionnel"></label>
+      </div>
+
+      <h3>Correction manuelle</h3>
+      <p class="hint">Si la lecture se trompe, corrigez ici : l'assistant repart de ces valeurs.</p>
+      <div class="manual">
+        <div><span>Score A</span><button type="button" data-m="scoreA:-1">−</button><button type="button" data-m="scoreA:1">+</button></div>
+        <div><span>Score B</span><button type="button" data-m="scoreB:-1">−</button><button type="button" data-m="scoreB:1">+</button></div>
+        <div><span>Maps A</span><button type="button" data-m="mapsA:-1">−</button><button type="button" data-m="mapsA:1">+</button></div>
+        <div><span>Maps B</span><button type="button" data-m="mapsB:-1">−</button><button type="button" data-m="mapsB:1">+</button></div>
+        <div><span>Côtés</span><button type="button" data-m="swap">Inverser CT/T</button></div>
+        <div><span>Équipes</span><button type="button" data-m="swapTeams">Inverser gauche/droite</button></div>
+      </div>
+      <menu>
+        <button value="reset" id="btnReset" type="button">Nouveau match</button>
+        <button value="ok" class="primary">Fermer</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <footer class="foot">
+    Estimations statistiques, pas des certitudes. Le stream a souvent 10–60 s de retard sur les cotes live : vérifiez le score chez le bookmaker avant de valider. Jouez uniquement ce que vous pouvez perdre — 18+.
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -103,21 +103,21 @@ export function nextHist(r, hist, winner) {
 
 // ---------- Round en cours (live) ----------
 
-// Force d'un joueur en vie, en "unités" (1 = fusil, 100 PV, casque).
+// Qualité d'équipement d'un joueur (1 = fusil + casque) et poids selon ses PV.
 const norm = (w) => String(w || '').toLowerCase().replace(/^weapon_/, '').replace(/[^a-z0-9]/g, '');
 const WEAPONS = {
-  awp: 1.12, ak47: 1, m4a1: 1, m4a1silencer: 1, m4a4: 1, aug: 1, sg556: 1, sg553: 1, scar20: 1, g3sg1: 1,
-  famas: 0.92, galilar: 0.92, galil: 0.92, ssg08: 0.85, m249: 0.85, negev: 0.85,
-  mp9: 0.8, mac10: 0.8, mp7: 0.8, mp5sd: 0.8, ump45: 0.8, p90: 0.82, bizon: 0.78,
-  nova: 0.75, xm1014: 0.78, mag7: 0.75, sawedoff: 0.72, deagle: 0.7, revolver: 0.68,
+  awp: 1.1, ak47: 1, m4a1: 1, m4a1silencer: 1, m4a4: 1, aug: 1, sg556: 1, sg553: 1, scar20: 1, g3sg1: 1,
+  famas: 0.9, galilar: 0.9, galil: 0.9, ssg08: 0.8, m249: 0.8, negev: 0.8,
+  mp9: 0.75, mac10: 0.75, mp7: 0.75, mp5sd: 0.75, ump45: 0.75, p90: 0.78, bizon: 0.72,
+  nova: 0.7, xm1014: 0.72, mag7: 0.7, sawedoff: 0.68, deagle: 0.55, revolver: 0.52,
+  tec9: 0.5, fiveseven: 0.5, cz75a: 0.5, p250: 0.46,
 };
-export const weaponFactor = (w) => WEAPONS[norm(w)] ?? 0.62; // sinon : pistolet
-export function playerUnit(p) {
-  const hp = clamp(p.hp ?? 100, 1, 100);
-  const armor = p.helmet ? 1 : p.kevlar ? 0.95 : 0.85;
-  return (0.35 + 0.65 * hp / 100) * weaponFactor(p.primaryWeapon) * armor;
-}
-const units = (players) => (players || []).filter((p) => p.alive !== false).reduce((t, p) => t + playerUnit(p), 0);
+export const weaponFactor = (w) => WEAPONS[norm(w)] ?? 0.42; // sinon : pistolet de départ
+export const quality = (p) => weaponFactor(p.primaryWeapon) * (p.helmet ? 1 : p.kevlar ? 0.9 : 0.75);
+export const hpUnit = (p) => 0.35 + 0.65 * clamp(p.hp ?? 100, 1, 100) / 100;
+export const playerUnit = (p) => hpUnit(p) * quality(p);
+const aliveOf = (players) => (players || []).filter((p) => p.alive !== false);
+const avg = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : 0);
 
 // Avantage numérique → logit. Calé sur les taux pro : 5v4 ≈ 71 %, 5v3 ≈ 86 %,
 // 4v2 ≈ 87 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % (chaque joueur supplémentaire pèse davantage).
@@ -139,7 +139,11 @@ export function liveRoundProb(s, base) {
   const plCT = ctSideA ? s.playersA : s.playersB, plT = ctSideA ? s.playersB : s.playersA;
   let uCT, uT, econ = 0;
   if (plCT?.length && plT?.length) {
-    uCT = units(plCT); uT = units(plT); // armes, armures et PV de chaque survivant
+    // Nombre de joueurs pondéré par les PV + écart de qualité d'équipement des survivants.
+    // Calage : full eco contre full buy ≈ 12 %, force-buy ≈ 28 %.
+    const aCT = aliveOf(plCT), aT = aliveOf(plT);
+    uCT = aCT.reduce((t, p) => t + hpUnit(p), 0); uT = aT.reduce((t, p) => t + hpUnit(p), 0);
+    econ = 2.9 * (avg(aCT.map(quality)) - avg(aT.map(quality)));
   } else {
     const hpCT = ctSideA ? s.hpA : s.hpB, hpT = ctSideA ? s.hpB : s.hpA;
     const eff = (n, hp) => (hp != null ? 0.35 * n + 0.65 * Math.min(hp, 100 * n) / 100 : n);
@@ -150,7 +154,7 @@ export function liveRoundProb(s, base) {
     }
   }
   const D = uCT - uT;
-  const kit = (plCT || []).some((p) => p.alive !== false && p.hasDefuseKit);
+  const kit = (plCT || []).some((p) => p.alive !== false && (p.hasDefuseKit || p.hasDefusekit));
   let x;
   if (s.bombPlanted) {
     if (aliveT === 0) x = (kit ? 0.9 : -0.2) + 0.35 * (aliveCT - 1); // défuse contre la montre
@@ -173,6 +177,7 @@ export function finalDistribution(a, b, opts) {
   let states = new Map([[`${a}|${b}|${opts.hist?.pw || ''}|${opts.hist?.r2 || ''}`, 1]]);
   const out = new Map();
   const limit = 24 + 6 * MAX_OT_BLOCKS;
+  const first = a + b + 1;
   while (states.size) {
     const next = new Map();
     for (const [key, mass] of states) {
@@ -186,7 +191,8 @@ export function finalDistribution(a, b, opts) {
         continue;
       }
       const hist = { pw: pw || undefined, r2: r2 || undefined };
-      const p = sig(roundLogit(r, { map, d, aSide: sideAt(r, refRound, refSide), hist }));
+      const econ = r === first ? opts.econ : undefined; // achat connu du premier round simulé
+      const p = sig(roundLogit(r, { map, d, aSide: sideAt(r, refRound, refSide), hist, econ }));
       for (const [w, pm] of [['A', p], ['B', 1 - p]]) {
         const na = ca + (w === 'A'), nb = cb + (w === 'B');
         const m = mass * pm;
@@ -318,7 +324,7 @@ export function analyze(match) {
           final.set(k, (final.get(k) || 0) + w * pw);
           continue;
         }
-        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win) });
+        const dist = finalDistribution(na, nb, { ...opts, hist: nextHist(r, hist, win), econ: match.nextEcon?.[win] });
         for (const [k, m] of dist) final.set(k, (final.get(k) || 0) + w * pw * m);
       }
     }

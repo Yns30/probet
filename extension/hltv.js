@@ -84,17 +84,23 @@ const normWeapon = (w) => String(w || '').toLowerCase().replace(/^weapon_/, '').
 export const weaponPrice = (w) => PRICES[normWeapon(w)] ?? 0;
 
 export function equipValue(p) {
-  return weaponPrice(p.primaryWeapon) + (p.helmet ? 1000 : p.kevlar ? 650 : 0) + (p.hasDefuseKit ? 400 : 0);
+  if (Number.isFinite(p.equipmentValue)) return p.equipmentValue; // valeur fournie par HLTV
+  const gun = weaponPrice(p.primaryWeapon);
+  // + grenades estimées quand le joueur a acheté une arme principale
+  return gun + (gun ? 400 : 0) + (p.helmet ? 1000 : p.kevlar ? 650 : 0) + (p.hasDefuseKit || p.hasDefusekit ? 400 : 0);
 }
 
 // Type d'achat d'une équipe d'après l'équipement porté.
+export function buyFromValue(avg) {
+  if (avg < 1500) return 'eco';
+  if (avg < 3000) return 'force';
+  if (avg < 3800) return 'half';
+  return 'full';
+}
+
 export function buyType(players) {
   if (!players?.length) return null;
-  const avg = players.reduce((s, p) => s + equipValue(p), 0) / players.length;
-  if (avg < 900) return 'eco';
-  if (avg < 2600) return 'force';
-  if (avg < 3500) return 'half';
-  return 'full';
+  return buyFromValue(players.reduce((s, p) => s + equipValue(p), 0) / players.length);
 }
 
 // Achat probable au round suivant (argent disponible + armes gardées par les survivants).
@@ -105,6 +111,32 @@ export function predictBuy(players) {
   if (avg >= 2900) return 'half';
   if (avg >= 1900) return 'force';
   return 'eco';
+}
+
+// Achat probable au round suivant selon l'issue du round en cours :
+// argent + équipement gardé par les survivants + prime (victoire 3 250 $, défaite selon la série).
+const lossBonus = (streak) => Math.min(1400 + 500 * Math.max(0, streak - 1), 3400);
+export function buyFromFunds(avg) {
+  if (avg >= 4700) return 'full';
+  if (avg >= 3300) return 'half';
+  if (avg >= 2200) return 'force';
+  return 'eco';
+}
+export function lossStreak(rounds, team) {
+  let k = 0;
+  for (let i = rounds.length - 1; i >= 0 && rounds[i].winner !== team; i--) k++;
+  return k;
+}
+export function nextBuys(pA, pB, rounds, nextRound) {
+  if (nextRound === 13 || (nextRound > 24 && (nextRound - 25) % 6 === 0)) return null; // remise à zéro
+  const funds = (players, won, streak) => players.reduce((t, p) => t + (p.money || 0)
+    + (p.alive ? (Number.isFinite(p.equipmentValue) ? p.equipmentValue : equipValue(p)) : 0)
+    + (won ? 3250 : lossBonus(streak + 1)), 0) / Math.max(1, players.length);
+  const sA = lossStreak(rounds, 'A'), sB = lossStreak(rounds, 'B');
+  return {
+    A: { A: buyFromFunds(funds(pA, true, sA)), B: buyFromFunds(funds(pB, false, sB)) },
+    B: { A: buyFromFunds(funds(pA, false, sA)), B: buyFromFunds(funds(pB, true, sB)) },
+  };
 }
 
 // ---------- Méta-données de la page ----------
@@ -268,8 +300,8 @@ export function toMatch(sb, meta = {}, mem = {}) {
   let phase;
   if (sb.live === false) phase = 'not_live';
   else if (mapWinner(scoreA, scoreB)) phase = 'map_over';
-  else if (played >= current) phase = 'round_over';
-  else if (sb.frozen) phase = 'freezetime';
+  else if (played >= current || /over|end/i.test(sb.currentRoundState || '')) phase = 'round_over';
+  else if (sb.frozen || /freeze/i.test(sb.currentRoundState || '')) phase = 'freezetime';
   else if (sb.bombPlanted) phase = 'bomb_planted';
   else phase = 'live';
 
@@ -281,7 +313,14 @@ export function toMatch(sb, meta = {}, mem = {}) {
   // Achat du round : figé au temps d'achat. Si le panneau arrive en cours de round, on ne
   // regarde que les survivants (les morts ont perdu leur arme).
   let buyA = null, buyB = null;
-  if (live) {
+  const initA = ctA ? sb.ctInitialEquipmentValue : sb.tInitialEquipmentValue;
+  const initB = ctA ? sb.tInitialEquipmentValue : sb.ctInitialEquipmentValue;
+  if (live && Number.isFinite(initA) && Number.isFinite(initB) && initA + initB > 0 && phase !== 'freezetime') {
+    // Valeur d'équipement officielle au début du round (scorebot HLTV).
+    buyA = buyFromValue(initA / Math.max(1, pA.length || 5));
+    buyB = buyFromValue(initB / Math.max(1, pB.length || 5));
+    if (mem.econ) mem.econ[current] = { A: buyA, B: buyB, final: true };
+  } else if (live) {
     const lock = mem.econ?.[current];
     if (phase === 'freezetime' || !lock || !lock.final) {
       const frozen = phase === 'freezetime';
@@ -312,10 +351,16 @@ export function toMatch(sb, meta = {}, mem = {}) {
     hpB: live ? sum(pB.filter((p) => p.alive), (p) => p.hp || 0) : null,
     moneyA: sum(pA, (p) => p.money || 0), moneyB: sum(pB, (p) => p.money || 0),
     bombPlanted: Boolean(sb.bombPlanted),
-    timer: phase === 'live' && Number.isInteger(meta.timer) ? meta.timer : null,
+    timer: phase !== 'live' ? null
+      : Number.isFinite(sb.roundTimeRemainingMS) ? Math.round(sb.roundTimeRemainingMS / 1000)
+        : Number.isInteger(meta.timer) ? meta.timer : null,
+    equipA: Number.isFinite(initA) ? initA : null, equipB: Number.isFinite(initB) ? initB : null,
+    facts: [...(sb.matchFacts || []), ...(sb.ctTeamFacts || []), ...(sb.tTeamFacts || [])]
+      .map((f) => (typeof f === 'string' ? f : f?.text || f?.description || null)).filter(Boolean),
     buyA, buyB, nextBuy: nextRound,
     rounds, hist, bestOf, mapsA, mapsB, mapNumber,
     pre, prior, seriesObs: seriesObs(meta.maps, sb.mapName),
+    nextEcon: live && !rounds.some((o) => o.synthetic) ? nextBuys(pA, pB, rounds, current + 1) : null,
     players: { A: pA, B: pB }, playersA: live ? pA : null, playersB: live ? pB : null,
   };
 }

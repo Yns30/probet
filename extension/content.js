@@ -30,8 +30,17 @@
     for (const label of labels) {
       let box = label.parentElement;
       for (let i = 0; i < 4 && box; i++, box = box.parentElement) {
-        const nums = [...box.textContent.matchAll(/(\d{1,3}(?:[.,]\d)?)\s*%/g)].map((m) => parseFloat(m[1].replace(',', '.')));
-        if (nums.length >= 2) return { p1: nums[0] / 100, p2: nums[1] / 100 };
+        // Lecture élément par élément pour ne pas coller deux nombres voisins.
+        const nums = [...box.querySelectorAll('*')]
+          .filter((e) => e.childElementCount === 0)
+          .map((e) => /^(\d{1,3}(?:[.,]\d+)?)\s*%$/.exec(e.textContent.trim()))
+          .filter(Boolean).map((m) => parseFloat(m[1].replace(',', '.')))
+          .filter((x) => x >= 0 && x <= 100);
+        if (nums.length >= 1) {
+          const p1 = nums[0] / 100;
+          const p2 = nums.length >= 2 && Math.abs(nums[0] + nums[1] - 100) < 1.5 ? nums[1] / 100 : 1 - p1;
+          return { p1, p2 };
+        }
       }
     }
     return null;

@@ -188,3 +188,47 @@ test('achat lu sur les survivants si le panneau arrive en cours de round', () =>
   const m = toMatch(sb, META, { econ: {} });
   assert.equal(m.buyB, 'full'); // et non "eco" à cause des morts sans arme
 });
+
+test('diagnostic réel (G2-1win, round 10) : champs du scorebot exploités', async () => {
+  const { readFileSync } = await import('node:fs');
+  const diag = JSON.parse(readFileSync(new URL('./fixtures/diag-g2-1win-r10.json', import.meta.url)));
+  const m = toMatch(diag.scoreboard, diag.meta, { econ: {} });
+  assert.deepEqual([m.scoreA, m.scoreB, m.aSide, m.phase, m.round], [5, 4, 'CT', 'live', 10]);
+  assert.deepEqual([m.buyA, m.buyB], ['eco', 'full']); // 6 400 $ contre 28 150 $ au départ du round
+  assert.equal(m.timer, 50);
+  assert.deepEqual([m.aliveA, m.aliveB], [2, 2]);
+  assert.equal(m.rounds.map((r) => r.winner).join(''), 'BBAAAAABB');
+  assert.equal(m.seriesObs.length, 4);
+  const res = analyze(m);
+  // 2v2, deux pistolets sans armure contre M4 + AK casqués : 1win très favori sur ce round
+  assert.ok(res.pRound < 0.25, `pRound=${res.pRound}`);
+  assert.ok(res.pMap > 0.4 && res.pMap < 0.8, `pMap=${res.pMap}`);
+});
+
+test('économie dans le round : eco et force-buy contre full buy (taux pro)', () => {
+  const team = (o) => Array.from({ length: 5 }, () => ({ alive: true, hp: 100, ...o }));
+  const fullBuy = team({ primaryWeapon: 'ak47', helmet: true, kevlar: true });
+  const p = (players) => {
+    const asCT = liveRoundProb({ aSide: 'CT', aliveA: 5, aliveB: 5, playersA: players, playersB: fullBuy }, { map: 'mirage', d: 0 });
+    const asT = 1 - liveRoundProb({ aSide: 'CT', aliveA: 5, aliveB: 5, playersA: fullBuy, playersB: players }, { map: 'mirage', d: 0 });
+    return (asCT + asT) / 2;
+  };
+  const eco = p(team({ primaryWeapon: '', kevlar: false, helmet: false }));
+  const force = p(team({ primaryWeapon: 'mp9', kevlar: true, helmet: false }));
+  assert.ok(eco > 0.08 && eco < 0.17, `eco=${eco}`);
+  assert.ok(force > 0.22 && force < 0.34, `force=${force}`);
+});
+
+test('économie du round suivant selon l’issue du round', async () => {
+  const { nextBuys, lossStreak } = await import('../extension/hltv.js');
+  const broke = Array.from({ length: 5 }, () => ({ alive: false, money: 300 }));
+  const rich = Array.from({ length: 5 }, () => ({ alive: true, money: 4000, primaryWeapon: 'ak47', helmet: true }));
+  const rounds = [{ winner: 'B' }, { winner: 'B' }];
+  assert.equal(lossStreak(rounds, 'A'), 2);
+  const nb = nextBuys(broke, rich, rounds, 6);
+  assert.equal(nb.B.A, 'force'); // A perd encore : 300 $ + 2 400 $ de bonus → force-buy possible
+  assert.equal(nb.A.A, 'half'); // A gagne : 300 $ + 3 250 $
+  assert.equal(nextBuys(broke, rich, [{ winner: 'A' }], 6).B.A, 'eco'); // 1re défaite : 300 $ + 1 400 $
+  assert.equal(nb.B.B, 'full');
+  assert.equal(nextBuys(broke, rich, rounds, 13), null); // mi-temps : argent remis à zéro
+});

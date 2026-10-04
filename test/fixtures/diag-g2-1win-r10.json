@@ -1,0 +1,20 @@
+{"url":"https://www.hltv.org/matches/2398730/g2-vs-1win-esl-pro-league-season-24",
+"meta":{"team1":{"name":"G2","id":5995,"rank":8,"vrs":1807,"rating":1.0397783484458774,"form":{"won":12,"lost":7}},"team2":{"name":"1win","id":10621,"rank":42,"vrs":1370,"rating":1.0579644645069122,"form":{"won":23,"lost":13}},"format":"Best of 3 (LAN) * Swiss round 2 (teams with a 0-1 record)","bestOf":3,
+"maps":[{"name":"Dust2","s1":11,"s2":13,"halves":[{"s1":4,"s2":8,"side1":"CT"},{"s1":7,"s2":5,"side1":"T"}]},{"name":"Ancient","s1":13,"s2":1,"halves":[{"s1":11,"s2":1,"side1":"T"},{"s1":2,"s2":0,"side1":"CT"}]},{"name":"Mirage","s1":null,"s2":null,"halves":[]}],
+"mapStats":{"dust2":{"w1":0.25,"n1":8,"w2":0.66,"n2":29},"ancient":{"w1":0.62,"n1":13,"w2":0.53,"n2":17},"mirage":{"w1":0.62,"n1":8,"w2":0.67,"n2":12}},
+"odds":[],"h2h":{"w1":0,"w2":0},"hltvProb":{"p1":0.455,"p2":1.145},"hasScorebot":true},
+"scoreboard":{"TERRORIST":[
+{"name":"nafany","nick":"nafany","alive":true,"money":5200,"hp":100,"primaryWeapon":"m4a1_silencer","kevlar":true,"helmet":true,"hasDefusekit":false,"equipmentValue":5000},
+{"name":"Ax1Le","nick":"Ax1Le","alive":false,"money":4450,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0},
+{"name":"ArtFr0st","nick":"ArtFr0st","alive":false,"money":5000,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0},
+{"name":"BELCHONOKK","nick":"BELCHONOKK","alive":true,"money":1900,"hp":91,"primaryWeapon":"ak47","kevlar":true,"helmet":true,"hasDefusekit":false,"equipmentValue":5400},
+{"name":"fame","nick":"fame","alive":false,"money":2500,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0}],
+"CT":[
+{"name":"huNter-","nick":"huNter-","alive":true,"money":2200,"hp":100,"primaryWeapon":"hkp2000","kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":200},
+{"name":"MATYS","nick":"MATYS","alive":false,"money":2650,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0},
+{"name":"r1nkle","nick":"r1nkle","alive":false,"money":2600,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0},
+{"name":"HeavyGod","nick":"HeavyGod","alive":false,"money":1600,"hp":0,"kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":0},
+{"name":"NertZ","nick":"NertZ","alive":true,"money":2150,"hp":100,"primaryWeapon":"fiveseven","kevlar":false,"helmet":false,"hasDefusekit":false,"equipmentValue":500}],
+"ctMatchHistory":{"firstHalf":[{"type":"lost","roundOrdinal":1,"survivingPlayers":1},{"type":"lost","roundOrdinal":2,"survivingPlayers":1},{"type":"CTs_Win","roundOrdinal":3,"survivingPlayers":4},{"type":"CTs_Win","roundOrdinal":4,"survivingPlayers":2},{"type":"CTs_Win","roundOrdinal":5,"survivingPlayers":5},{"type":"CTs_Win","roundOrdinal":6,"survivingPlayers":2},{"type":"CTs_Win","roundOrdinal":7,"survivingPlayers":1},{"type":"lost","roundOrdinal":8,"survivingPlayers":-1},{"type":"lost","roundOrdinal":9,"survivingPlayers":1}],"secondHalf":[]},
+"terroristMatchHistory":{"firstHalf":[{"type":"Target_Bombed","roundOrdinal":1,"survivingPlayers":4},{"type":"Target_Bombed","roundOrdinal":2,"survivingPlayers":0},{"type":"lost","roundOrdinal":3,"survivingPlayers":0},{"type":"lost","roundOrdinal":4,"survivingPlayers":0},{"type":"lost","roundOrdinal":5,"survivingPlayers":0},{"type":"lost","roundOrdinal":6,"survivingPlayers":0},{"type":"lost","roundOrdinal":7,"survivingPlayers":0},{"type":"Target_Bombed","roundOrdinal":8,"survivingPlayers":0},{"type":"Target_Bombed","roundOrdinal":9,"survivingPlayers":4}],"secondHalf":[]},
+"bombPlanted":false,"mapName":"de_mirage","terroristTeamName":"1win","ctTeamName":"G2","currentRound":10,"currentRoundState":"started","counterTerroristScore":5,"terroristScore":4,"ctTeamId":5995,"tTeamId":10621,"frozen":false,"live":true,"ctTeamScore":5,"tTeamScore":4,"startingCt":5995,"startingT":10621,"regulationHalfLength":12,"overtimeHalfLength":3,"ctInitialEquipmentValue":6400,"tInitialEquipmentValue":28150,"lastKilledSide":"CT","ctTeamFacts":[],"tTeamFacts":[],"matchFacts":[],"roundTimeRemainingMS":50260}}

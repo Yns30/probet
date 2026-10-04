@@ -129,12 +129,13 @@ function renderBoard(m) {
   const dots = (players) => (players || []).slice(0, 5).map((p) => `<i><b style="width:${p.alive ? Math.max(8, p.hp ?? 100) : 0}%"></b></i>`).join('');
   $('aliveA').innerHTML = dots(m.players.A);
   $('aliveB').innerHTML = dots(m.players.B);
-  const eco = (buy, money, n) => {
+  const eco = (buy, money, n, equip) => {
     const per = n ? Math.round(money / n / 100) * 100 : 0;
-    return [buy ? (m.nextBuy ? `Prochain : ${BUYS[buy]}` : BUYS[buy]) : null, n ? `${per.toLocaleString('fr-FR')} $ en banque/joueur` : null].filter(Boolean).join(' · ');
+    const eq = equip != null && !m.nextBuy ? `équipement ${Math.round(equip / 100) / 10} k$` : null;
+    return [buy ? (m.nextBuy ? `Prochain : ${BUYS[buy]}` : BUYS[buy]) : null, eq, n ? `${per.toLocaleString('fr-FR')} $ en banque/joueur` : null].filter(Boolean).join(' · ');
   };
-  $('ecoA').textContent = eco(m.buyA, m.moneyA, m.players.A.length);
-  $('ecoB').textContent = eco(m.buyB, m.moneyB, m.players.B.length);
+  $('ecoA').textContent = eco(m.buyA, m.moneyA, m.players.A.length, m.equipA);
+  $('ecoB').textContent = eco(m.buyB, m.moneyB, m.players.B.length, m.equipB);
   const bits = [];
   bits.push(m.bestOf > 1 ? `Map ${m.mapNumber} · BO${m.bestOf} ${m.mapsA}-${m.mapsB}` : 'BO1');
   if (m.map) bits.push(m.map[0].toUpperCase() + m.map.slice(1));
@@ -143,6 +144,8 @@ function renderBoard(m) {
   if (m.timer != null) bits.push(`${Math.floor(m.timer / 60)}:${String(m.timer % 60).padStart(2, '0')}`);
   $('roundInfo').innerHTML = bits.filter(Boolean).join('<br>');
 }
+
+const validHltv = (h) => (h && h.p1 >= 0 && h.p1 <= 1 ? h : null);
 
 function bar(title, p, [A, B], ref) {
   const a = Math.round(p * 100);
@@ -156,7 +159,7 @@ function bar(title, p, [A, B], ref) {
 function renderProbs(m, res, src) {
   let html = '';
   if (res.pRound != null) html += bar(`Round ${res.round}`, res.pRound, m.names);
-  const hp = src.meta?.hltvProb;
+  const hp = validHltv(src.meta?.hltvProb);
   const ref = hp ? `Probabilité affichée par HLTV : ${esc(m.names[0])} ${pct(hp.p1)}` : '';
   html += bar(`Map ${m.mapNumber}`, res.over ? (res.over === 'A' ? 1 : 0) : res.pMap, m.names, ref);
   if (res.pSeries != null) html += bar(`Série BO${m.bestOf}`, res.pSeries, m.names);
@@ -221,11 +224,12 @@ function facts(m, res, src) {
   let k = 0;
   for (let i = known.length - 1; i >= 0 && known[i].winner === known[known.length - 1].winner; i--) k++;
   if (k >= 3) out.push(`${known[known.length - 1].winner === 'A' ? A : B} enchaîne ${k} rounds`);
-  const hp = src.meta?.hltvProb;
+  const hp = validHltv(src.meta?.hltvProb);
   if (hp && !res.over && Math.abs(hp.p1 - res.pMap) >= 0.1) {
     out.push(`Écart avec HLTV : ${A} ${pct(res.pMap)} (ProBet) contre ${pct(hp.p1)} (HLTV)`);
   }
-  return out.slice(0, 4);
+  for (const f of m.facts || []) out.push(`HLTV : ${f}`);
+  return out.slice(0, 5);
 }
 
 function renderPicks(list, conf, mem) {

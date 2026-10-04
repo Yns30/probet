@@ -1,96 +1,77 @@
-# ProBet CS2 — assistant de paris en direct
+# ProBet CS2 — assistant de paris en direct (HLTV)
 
-ProBet regarde le match CS2 **en même temps que vous** (YouTube, Twitch ou tout stream ouvert sur votre écran). Il lit l'état de la partie en continu et calcule **en direct** les probabilités de chaque marché pour vous proposer les paris à placer.
-
-**100 % gratuit et local :** aucune API payante, aucun compte. La lecture du stream se fait dans votre navigateur, par OCR (Tesseract) et analyse des couleurs du HUD.
+ProBet est une extension Chrome/Edge. Laissez ouverte sur votre PC la page HLTV du match en cours : ProBet lit en direct les données de cette page et affiche, dans un panneau latéral, les probabilités et les paris à jouer.
 
 ```
-Stream (onglet du navigateur) ──► capture chaque seconde ──► OCR + analyse de pixels (local)
-                                                                      │  score, chrono, joueurs en vie,
-                                                                      │  côtés CT/T, bombe posée
-                                                                      ▼
-                     suivi des rounds (filtre d'erreurs) ──► moteur de probabilités ──► interface live épurée
+Page de match HLTV ouverte ──► données live reçues par la page (scorebot)
+                                │  score, round, côtés, joueurs en vie, PV, argent,
+                                │  armes, bombe, historique des rounds, kills…
+                                ▼
+                         moteur de probabilités ──► panneau ProBet (à côté de la page)
 ```
 
-## Ce qui est analysé
+- **Gratuit, sans compte, sans API, sans proxy.** ProBet n'envoie aucune requête à HLTV : il écoute les données que la page ouverte reçoit déjà pour afficher son scoreboard live.
+- **Plusieurs matchs à la fois :** si plusieurs pages de match sont ouvertes, un menu permet de choisir celui à suivre.
 
-| Facteur | Source | Effet |
-|---|---|---|
-| Score, round, côtés CT/T | HUD du stream | Propagation exacte MR12 + prolongations MR3 |
-| Joueurs en vie, bombe posée, chrono | Cartes joueurs grisées / chrono rouge | Probabilité de gagner le round en cours |
-| Biais CT/T de la map | Map choisie dans les réglages | Taux de base par côté (ex. Nuke côté CT, Anubis côté T) |
-| Pistol et anti-eco | Historique des rounds | Les rounds 2-3 favorisent fortement le vainqueur du pistol |
-| Force relative des équipes | Cotes d'avant-match + rounds joués | Mise à jour bayésienne après chaque round |
-| État de la série (BO1/3/5) | Réglages | Probabilité de gagner la série |
+## Installation (2 minutes)
 
-## Marchés calculés
-
-- Vainqueur du round en cours (mis à jour à chaque kill)
-- Vainqueur de la map
-- Total de rounds (plus/moins), handicaps en rounds
-- Prolongation oui/non
-- Vainqueur de la série
-
-Pour chacun, l'assistant donne la **probabilité du modèle**, la **cote juste** et la **cote minimale à prendre**. Si vous saisissez les cotes de votre bookmaker, il signale les paris **VALUE** (espérance positive) et propose une mise : un quart de Kelly, plafonné à 5 % de la bankroll et pondéré par la fiabilité.
-
-## Installation
-
-Il faut seulement Node.js 20+ (gratuit : https://nodejs.org).
-
-```bash
-npm install
-npm start
-```
-
-Ouvrez ensuite **http://localhost:3000** dans Chrome, Edge ou Firefox. Tout fonctionne hors ligne une fois installé.
+1. Téléchargez ce dépôt (bouton « Code » → « Download ZIP ») et décompressez-le.
+2. Ouvrez `chrome://extensions` (ou `edge://extensions`).
+3. Activez le **Mode développeur** (en haut à droite).
+4. Cliquez sur **Charger l'extension non empaquetée** et choisissez le dossier **`extension`**.
+5. Épinglez l'icône ProBet dans la barre d'outils (icône puzzle → épingle).
 
 ## Utilisation
 
-1. Ouvrez le match sur YouTube ou Twitch dans un onglet, en grand, avec le HUD bien visible (qualité 720p ou plus).
-2. Dans ProBet, cliquez sur **Connecter le stream** et choisissez l'onglet du match.
-3. **Calibrez le HUD** (une seule fois par organisateur de tournoi : la calibration est mémorisée). Faites-le de préférence **pendant le temps d'achat**, quand les 10 joueurs sont en vie. Pour chaque zone, tracez un rectangle serré sur l'image :
-   - **Score gauche / Score droite** (obligatoires) : juste les chiffres ;
-   - **Chrono du round** : sert aussi à détecter la bombe (le chrono passe au rouge ou disparaît) ;
-   - **Cartes joueurs gauche / droite** : le bloc des 5 joueurs de chaque équipe (les morts sont grisés) ;
-   - **Couleur équipe gauche / droite** : une zone colorée par le côté (bleu = CT, orange = T), souvent le cadre du score.
+1. Ouvrez la page du match HLTV, par exemple `https://www.hltv.org/matches/2398729/furia-vs-mouz-esl-pro-league-season-24`. Si elle était déjà ouverte avant l'installation, **rechargez-la**.
+2. Cliquez sur l'icône ProBet : le panneau s'ouvre à côté de la page.
+3. Laissez la page HLTV ouverte. Le panneau se met à jour à chaque événement du match.
 
-   La ligne « Lecture test » affiche ce que l'assistant lit : vérifiez qu'elle correspond à l'image. Si des joueurs vivants sont comptés morts (ou l'inverse), ajustez la **sensibilité**.
-4. Dans **Réglages**, indiquez les noms des équipes, la map, le format (BO1/BO3/BO5) et, si possible, les **cotes d'avant-match** des deux équipes. Elles calibrent la force des équipes avant les premiers rounds.
-5. Suivez le panneau **Paris à jouer**. Il se met à jour chaque seconde.
-6. Pour détecter la value, ouvrez **Tous les marchés** et entrez les cotes de votre bookmaker.
+Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match en cours.
 
-Le bouton **Démo** (ou `http://localhost:3000/?demo=1`) lance un match simulé pour essayer l'interface sans stream.
+## Ce que ProBet analyse
 
-Si la lecture se trompe, **Réglages → Correction manuelle** permet de corriger le score, les maps gagnées, les côtés ou l'ordre des équipes. L'assistant repart de ces valeurs.
+| Donnée HLTV | Utilisation |
+|---|---|
+| Score, round, côtés CT/T, map | Calcul exact jusqu'à la fin de la map (MR12 + prolongations MR3), avec l'avantage CT/T propre à chaque map |
+| Historique des rounds | Force relative des équipes, mise à jour après chaque round ; effet pistol / anti-eco |
+| Joueurs en vie et **points de vie** | Probabilité du round en cours (un 3v2 à 20 PV ne vaut pas un 3v2 à 100 PV) |
+| Bombe posée | Probabilité post-plant (retake / défense de la bombe) |
+| Armes, armures, argent | Type d'achat (eco / force / full) du round, et achat probable au round suivant |
+| Cotes des bookmakers affichées par HLTV | Force des équipes avant les premiers rounds (marge retirée) |
+| Maps déjà jouées, format BO1/BO3/BO5 | Probabilité de gagner la série |
+| Probabilité live affichée par HLTV | Comparaison avec ProBet ; les écarts importants sont signalés |
 
-## Fiabilité intégrée
+## Marchés calculés
 
-- Un score n'avance que **d'un round à la fois**. Tout autre saut (erreur de lecture, arrivée en cours de match, nouvelle map) doit être **confirmé par deux lectures identiques**.
-- Joueurs en vie, côtés et bombe ne changent qu'après **deux lectures identiques** (un flash ou une transition ne fausse rien).
-- Après un round, l'assistant attend le début du suivant (10 joueurs en vie ou chrono plein) avant de relire les joueurs.
-- Si le diffuseur inverse les équipes à la mi-temps, l'inversion est détectée par les scores. Elle ne l'est pas quand les scores sont égaux : utilisez alors **Inverser gauche/droite**.
-- Quand le score est illisible (replay, desk des analystes, pub), la lecture est mise en pause.
-- L'indicateur **Fiabilité** combine la confiance de l'OCR, l'incertitude sur la force des équipes et le nombre de rounds observés. Les mises conseillées baissent avec elle.
+Vainqueur du round en cours, vainqueur de la map, total de rounds (plus/moins), handicaps, prolongation oui/non, vainqueur de la série.
 
-## Ce que la lecture locale ne voit pas
+Pour chaque marché, ProBet donne la **probabilité**, la **cote juste** et la **cote minimale à exiger** chez votre bookmaker. Ouvrez **Tous les marchés** et entrez les cotes de votre bookmaker : les paris à espérance positive apparaissent en tête avec le badge **VALUE**, l'avantage en % et une mise conseillée (quart de Kelly, plafonnée à 5 % de la bankroll).
 
-Contrairement à un humain, l'OCR ne reconnaît ni les armes ni l'argent : le type d'achat (eco/force/full) n'est pas lu. L'effet économique du pistol et des rounds anti-eco reste pris en compte grâce à l'historique des rounds.
+Dans **Réglages** : bankroll, avantage minimum exigé pour un pari VALUE, et cotes d'avant-match manuelles si vous préférez les vôtres à celles affichées par HLTV.
 
-## Limites — à lire avant de parier
+## En cas de problème
 
-- **Retard du stream :** une diffusion YouTube/Twitch a souvent 10 à 60 s de retard sur le match réel, donc sur les cotes live des bookmakers. Vérifiez toujours le score affiché chez votre bookmaker avant de valider un pari.
-- Le modèle est **statistique** : il estime des probabilités, il ne garantit rien. Une cote juste ne vaut que ce que vaut le modèle, et l'avantage n'existe que si la cote du bookmaker est nettement au-dessus.
+- **« En attente des données live »** : le match n'a peut-être pas commencé. Sinon, rechargez la page HLTV : l'extension doit être chargée avant le scoreboard.
+- **Une donnée semble fausse ou rien ne s'affiche :** dans **Réglages**, cliquez sur **Copier le diagnostic**, puis collez-le dans une conversation. Il contient ce que ProBet a reçu de la page, de quoi l'adapter si HLTV change sa structure.
+
+## Limites
+
+- HLTV a lui aussi quelques secondes de retard sur le match réel, et les cotes live bougent vite. Vérifiez le score chez votre bookmaker avant de valider un pari.
+- Le modèle est **statistique** : il estime des probabilités, il ne garantit rien. L'avantage n'existe que si la cote du bookmaker est nettement au-dessus de la cote juste.
 - Ne jouez que ce que vous pouvez perdre. Réservé aux 18 ans et plus.
 
 ## Structure
 
 ```
-server.js           serveur HTTP local (interface + fichiers de l'OCR)
-public/reader.js    lecture locale du HUD : OCR Tesseract + calibration des zones
-public/pixels.js    analyse de pixels (joueurs en vie, côtés, bombe, binarisation)
-public/engine.js    moteur de probabilités (rounds, map, totaux, handicaps, série, value)
-public/tracker.js   suivi de l'état du match à partir des lectures successives
-public/demo.js      simulateur de match (mode démo)
-public/app.js       interface, capture du stream, rendu
-test/               tests (npm test)
+extension/
+  manifest.json   déclaration de l'extension (Chrome/Edge, Manifest V3)
+  hook.js         écoute les messages live reçus par la page HLTV (sans requête supplémentaire)
+  content.js      lit la page (équipes, format, maps, cotes) et transmet au panneau
+  hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases)
+  engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
+  panel.*         panneau latéral (interface)
+  demo.js         match simulé au format HLTV (mode démo, tests)
+  background.js   ouvre le panneau au clic sur l'icône
+test/             tests (npm test, Node 20+)
 ```

@@ -103,7 +103,7 @@ export function nextHist(r, hist, winner) {
 
 // ---------- Round en cours (live) ----------
 
-// s : { aSide, aliveA, aliveB, bombPlanted, timer, buyA, buyB, phase }
+// s : { aSide, aliveA, aliveB, hpA, hpB, bombPlanted, timer, buyA, buyB, phase }
 export function liveRoundProb(s, base) {
   const ctSideA = s.aSide === 'CT';
   const aliveCT = ctSideA ? s.aliveA : s.aliveB;
@@ -121,7 +121,10 @@ export function liveRoundProb(s, base) {
     const e = 0.45 * (BUY_STRENGTH[s.buyA] - BUY_STRENGTH[s.buyB]);
     econ = (ctSideA ? e : -e) * ((aliveCT + aliveT) / 10);
   }
-  const diff = aliveCT - aliveT;
+  // Avec les PV connus (scorebot HLTV), un joueur à 20 PV compte moins qu'un joueur à 100.
+  const hpCT = ctSideA ? s.hpA : s.hpB, hpT = ctSideA ? s.hpB : s.hpA;
+  const eff = (n, hp) => (hp != null && n > 0 ? 0.55 * n + 0.45 * Math.min(hp, 100 * n) / 100 : n);
+  const diff = eff(aliveCT, hpCT) - eff(aliveT, hpT);
   const scale = Math.sqrt(5 / Math.max(aliveCT, aliveT, 1));
   let x;
   if (s.bombPlanted) {

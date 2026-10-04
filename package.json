@@ -1,20 +1,12 @@
 {
   "name": "probet",
-  "version": "1.0.0",
-  "description": "Assistant de paris CS2 en direct : lit le stream (YouTube/Twitch) et calcule les probabilités en temps réel",
+  "version": "2.0.0",
+  "description": "Assistant de paris CS2 en direct basé sur la page de match HLTV (extension Chrome/Edge)",
   "type": "module",
-  "main": "server.js",
+  "private": true,
   "scripts": {
-    "start": "node server.js",
     "test": "node --test test/*.test.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "license": "MIT",
-  "dependencies": {
-    "@tesseract.js-data/eng": "^1.0.0",
-    "tesseract.js": "^7.0.0",
-    "tesseract.js-core": "^7.0.0"
-  }
+  "engines": { "node": ">=20" },
+  "license": "MIT"
 }

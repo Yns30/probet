@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ProBet CS2</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">ProBet <span>CS2</span></div>
+    <button id="btnSettings" class="ghost" aria-label="Réglages">Réglages</button>
+  </header>
+
+  <div class="source">
+    <select id="matchSelect" aria-label="Match suivi"></select>
+    <div id="status" class="status idle"><i></i><span>Recherche d'une page HLTV…</span></div>
+  </div>
+
+  <section id="empty" class="empty">
+    <p><b>Ouvrez la page d'un match HLTV</b> (en direct) dans un onglet : ProBet la lit automatiquement.</p>
+    <p class="hint">Ex. https://www.hltv.org/matches/2398729/furia-vs-mouz-…</p>
+    <button id="btnDemo">Essayer avec un match simulé</button>
+  </section>
+
+  <main id="main" hidden>
+    <section class="board">
+      <div class="team a">
+        <div class="tname"><span id="nameA"></span><em id="sideA" class="side"></em></div>
+        <div id="aliveA" class="alive"></div>
+        <div id="ecoA" class="eco"></div>
+      </div>
+      <div class="mid">
+        <div class="score"><b id="scoreA">0</b><small>:</small><b id="scoreB">0</b></div>
+        <div id="roundInfo" class="rinfo"></div>
+      </div>
+      <div class="team b">
+        <div class="tname"><em id="sideB" class="side"></em><span id="nameB"></span></div>
+        <div id="aliveB" class="alive"></div>
+        <div id="ecoB" class="eco"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <header><h2>Paris à jouer</h2><span id="conf" class="conf"></span></header>
+      <ol id="picks"></ol>
+    </section>
+
+    <section class="card">
+      <header><h2>Probabilités</h2></header>
+      <div id="bars"></div>
+      <figure class="spark">
+        <figcaption>Victoire sur la map — <span id="sparkLabel"></span></figcaption>
+        <div class="sparkwrap">
+          <svg id="spark" viewBox="0 0 300 70" preserveAspectRatio="none" role="img" aria-label="Évolution de la probabilité de victoire sur la map"></svg>
+          <div id="sparkTip" class="tip" hidden></div>
+        </div>
+      </figure>
+      <div id="extra" class="extra"></div>
+    </section>
+
+    <section class="card">
+      <header><h2>Analyse</h2></header>
+      <ul id="facts"></ul>
+      <ul id="feed"></ul>
+    </section>
+
+    <section class="card">
+      <details id="marketsBox">
+        <summary><h2>Tous les marchés</h2><span>entrez vos cotes pour détecter la value</span></summary>
+        <table>
+          <thead><tr><th>Sélection</th><th>Proba</th><th>Juste</th><th>Votre cote</th><th>EV</th></tr></thead>
+          <tbody id="marketRows"></tbody>
+        </table>
+      </details>
+    </section>
+  </main>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h2>Réglages</h2>
+      <label>Bankroll (€) <input id="setBank" type="number" min="0" step="10" placeholder="optionnel"></label>
+      <div class="row">
+        <label>Cote pré-match équipe 1 <input id="setOdds1" inputmode="decimal" placeholder="auto (HLTV)"></label>
+        <label>Cote pré-match équipe 2 <input id="setOdds2" inputmode="decimal" placeholder="auto (HLTV)"></label>
+      </div>
+      <p class="hint">Par défaut, ProBet utilise les cotes des bookmakers affichées sur la page HLTV pour estimer la force des équipes avant les premiers rounds. Saisissez vos propres cotes pour les remplacer.</p>
+      <label>Avantage minimum pour un pari VALUE (%) <input id="setEdge" type="number" min="1" max="20" step="0.5" value="4"></label>
+      <menu>
+        <button type="button" id="btnDiag">Copier le diagnostic</button>
+        <button value="ok" class="primary">Fermer</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <footer class="foot">Estimations statistiques, pas des certitudes. Vérifiez le score chez votre bookmaker avant de valider. Jouez uniquement ce que vous pouvez perdre — 18+.</footer>
+
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

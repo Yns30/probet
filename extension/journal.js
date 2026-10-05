@@ -52,10 +52,12 @@ export function record(j, { key, matchId, m, res, hltv, scoreboard, meta, t = Da
 
   const R = (e.rounds[res.round] ??= {});
   const hl = hltv?.oriented && Number.isFinite(hltv.p1) ? { p: r3(hltv.p1), ot: r3(hltv.ot) } : null;
-  // Début de round : premier relevé à 5 contre 5, achats connus.
-  if (!R.start && m.aliveA === 5 && m.aliveB === 5 && !m.bombPlanted) {
+  // Début de round : relevé à 5 contre 5, une fois les achats de toutes les équipes reçus
+  // (HLTV les envoie joueur par joueur pendant 1 à 3 s ; ready = achats complets).
+  const ready = m.econReady !== false;
+  if ((!R.start || (R.start.ready === false && ready)) && m.aliveA === 5 && m.aliveB === 5 && !m.bombPlanted) {
     R.start = {
-      t, a: m.scoreA, b: m.scoreB, side: m.aSide, buyA: m.buyA, buyB: m.buyB, eA: m.equipA, eB: m.equipB,
+      t, ready, a: m.scoreA, b: m.scoreB, side: m.aSide, buyA: m.buyA, buyB: m.buyB, eA: m.equipA, eB: m.equipB,
       pr: r3(res.pRound), pm: r3(res.pMap), pot: r3(res.pOT), ps: r3(res.pSeries), sdD: r3(res.strength?.sd),
       hl, sb: slimBoard(scoreboard),
     };
@@ -143,14 +145,14 @@ export function summarize(j) {
   const picks = { lean: [], value: [] };
   for (const e of entries) {
     for (const R of Object.values(e.rounds)) {
-      if (R.w && Number.isFinite(R.start?.pr)) rounds.push([R.start.pr, R.w === 'A' ? 1 : 0]);
+      if (R.w && Number.isFinite(R.start?.pr) && R.start.ready !== false) rounds.push([R.start.pr, R.w === 'A' ? 1 : 0]);
     }
     if (e.final) {
       const y = e.final.w === 'A' ? 1 : 0;
       if (Number.isFinite(e.prior)) priors.push([e.prior, y]);
       for (const R of Object.values(e.rounds)) {
         const s = R.start;
-        if (!Number.isFinite(s?.pm)) continue;
+        if (!Number.isFinite(s?.pm) || s.ready === false) continue;
         maps.push([s.pm, y]);
         if (Number.isFinite(s.hl?.p)) mapsVsHltv.push([s.pm, s.hl.p, y]);
       }
@@ -182,6 +184,44 @@ export function summarize(j) {
     prior: { n: priors.length, brier: brier(priors) },
     picks: { lean: pickStats(picks.lean), value: pickStats(picks.value) },
   };
+}
+
+// Clé d'une map : match + map (une map n'est jouée qu'une fois dans une série).
+export const mapKeyOf = (matchId, map) => `${matchId}|${normalizeMap(map) || map}`;
+
+// Journaux des versions ≤ 2.5.1 : une même map pouvait être enregistrée sous plusieurs clés
+// (numéro de map dans la série recalculé en cours de route). Fusionne ces doublons.
+// Retourne { removed, changed } : clés supprimées et clés réécrites.
+export function mergeDuplicates(j) {
+  const groups = new Map();
+  for (const [k, e] of Object.entries(j.maps)) {
+    const id = mapKeyOf(e.matchId, e.map);
+    (groups.get(id) ?? groups.set(id, []).get(id)).push([k, e]);
+  }
+  const removed = [], changed = [];
+  for (const [id, list] of groups) {
+    if (list.length === 1 && list[0][0] === id) continue;
+    const starts = (e) => Object.values(e.rounds || {}).filter((R) => R.start).length;
+    list.sort((x, y) => starts(y[1]) - starts(x[1]));
+    const base = JSON.parse(JSON.stringify(list[0][1]));
+    for (const [, e] of list.slice(1)) {
+      for (const [r, R] of Object.entries(e.rounds || {})) {
+        const B = (base.rounds[r] ??= {});
+        B.w ??= R.w;
+        if (R.start && (!B.start || (B.start.ready === false && R.start.ready !== false))) { B.start = R.start; B.snaps = R.snaps; }
+        if (!B.snaps && R.snaps) B.snaps = R.snaps;
+      }
+      for (const [pid, p] of Object.entries(e.picks || {})) base.picks[pid] ??= p;
+      base.final ??= e.final;
+      base.series ??= e.series;
+      base.started = Math.min(base.started ?? Infinity, e.started ?? Infinity);
+      base.updated = Math.max(base.updated ?? 0, e.updated ?? 0);
+    }
+    for (const [k] of list) { delete j.maps[k]; if (k !== id) removed.push(k); }
+    j.maps[id] = base;
+    changed.push(id);
+  }
+  return { removed, changed };
 }
 
 // Garde les maps les plus récentes.

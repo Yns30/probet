@@ -84,7 +84,7 @@ Pendant que vous suivez un match, ProBet enregistre sur votre PC, sans aucune re
 - le vainqueur de chaque round et le score final de la map (complété depuis la page si vous l'avez manquée) ;
 - chaque pari proposé (TENDANCE ou VALUE, avec la cote saisie), réglé automatiquement à la fin.
 
-Dans **Réglages → Journal des matchs** : le bilan (justesse des prévisions, ProBet contre HLTV, paris gagnés par rapport à l'annoncé), un bouton **Exporter le journal** (fichier `.json`) et un bouton **Effacer**. Envoyez l'export pour faire recalibrer le modèle sur de vrais matchs : les chiffres deviennent parlants après une dizaine de maps terminées.
+Dans **Réglages → Journal des matchs** : le bilan (justesse des prévisions, ProBet contre HLTV, paris gagnés par rapport à l'annoncé), un bouton **Exporter le journal** (fichier `.json`) et un bouton **Effacer**. Envoyez l'export pour faire recalibrer le modèle sur de vrais matchs : les chiffres deviennent parlants après une dizaine de maps terminées. Les journaux des versions 2.5.x, où une même map pouvait apparaître plusieurs fois, sont nettoyés automatiquement à l'ouverture du panneau.
 
 Analyse d'un export (Node 20+) : `node tools/analyse-journal.mjs probet-journal-AAAA-MM-JJ.json`. L'analyse affiche le calibrage par tranche (« annoncé 70 % → observé … »), les paris par marché, et rejoue le modèle actuel sur les rounds enregistrés pour mesurer l'effet d'une modification.
 
@@ -98,6 +98,13 @@ Le score utilisé est l'écart quadratique moyen (score de Brier) : 0,25 corresp
 ## Calibrage
 
 Les paramètres du modèle (`CAL` dans `extension/engine.js`) sont vérifiés sur des situations réelles où HLTV affichait sa propre probabilité (`test/calibration.test.js`). Exemple : Vitality-NaVi sur Anubis, à 4-0 ProBet donne 87 % (HLTV 87,4 %) et à 10-4 ProBet donne 98,8 % (HLTV 94,2 % + 4,5 % de prolongation).
+
+**Premier recalage sur 9 maps réelles (127 rounds, 527 moments de jeu enregistrés) :**
+
+- *Achats lus trop tôt.* En début de round, HLTV transmet l'équipement joueur par joueur pendant 1 à 3 secondes. ProBet prenait ces valeurs incomplètes pour l'achat du round (32 rounds lus « eco contre eco », alors que la plupart étaient des full buy). L'achat n'est désormais retenu qu'une fois au moins 4 joueurs par équipe reçus ; d'ici là, il est « inconnu ».
+- *À 5 contre 5, la probabilité d'avant-round.* Avant le premier kill, la probabilité du round vient de l'économie, de la force des équipes et du côté : c'est le calcul le mieux calibré sur les matchs enregistrés (eco contre full buy : 18 % annoncé, 17 % observé). Le détail joueur par joueur comptait deux fois la force des équipes et donnait jusqu'à 88 % dans des full buy contre full buy. Dès le premier kill, le modèle de situation (joueurs en vie, PV, armes, bombe), déjà bien calibré sur les moments enregistrés, prend le relais.
+- *Tendances* figées à partir du premier kill (et non plus dès le début du round, quand les achats ne sont pas encore connus).
+- Résultat sur les débuts de round : score de Brier 0,246 → 0,234. Sur la map, ProBet fait mieux que HLTV sur 7 des 9 maps.
 
 Le modèle tient compte du fait que les rounds s'enchaînent par séries : le vainqueur d'un round garde l'avantage économique au suivant. Sans cela, une avance au score paraîtrait plus définitive qu'elle ne l'est.
 

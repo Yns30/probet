@@ -103,6 +103,13 @@ export function buyType(players) {
   return buyFromValue(players.reduce((s, p) => s + equipValue(p), 0) / players.length);
 }
 
+// Début de round : joueurs dont l'équipement est déjà arrivé (un joueur a toujours au moins
+// un pistolet ; 0 signifie « pas encore reçu »).
+const hasGear = (p) => p.equipmentValue > 0 || Boolean(p.primaryWeapon);
+const loaded = (ps) => ps.filter(hasGear).length;
+const teamValue = (ps) => ps.reduce((s, p) => s + (hasGear(p) ? equipValue(p) : 0), 0);
+const aliveOf5 = (ps) => ps.length >= 5 && ps.every((p) => p.alive !== false);
+
 // Achat probable au round suivant (argent disponible + armes gardées par les survivants).
 export function predictBuy(players) {
   if (!players?.length) return null;
@@ -318,7 +325,8 @@ export function toMatch(sb, meta = {}, mem = {}) {
   for (let r = 1; r <= played; r++) {
     const w = winners.get(r);
     if (!w) { complete = false; break; }
-    rounds.push({ r, winner: w, aSide: sideAt(r, current, aSide), econ: mem.econ?.[r] || null });
+    const ec = mem.econ?.[r];
+    rounds.push({ r, winner: w, aSide: sideAt(r, current, aSide), econ: ec?.A ? { A: ec.A, B: ec.B } : null });
   }
   let hist = {};
   if (complete && rounds.filter((o) => o.winner === 'A').length === scoreA) {
@@ -345,28 +353,36 @@ export function toMatch(sb, meta = {}, mem = {}) {
   const live = phase === 'live' || phase === 'bomb_planted' || phase === 'freezetime';
   const nextRound = phase === 'round_over';
 
-  // Achat du round : figé au temps d'achat. Si le panneau arrive en cours de round, on ne
-  // regarde que les survivants (les morts ont perdu leur arme).
-  let buyA = null, buyB = null;
+  // Achat du round. Au début du round, HLTV envoie l'équipement joueur par joueur pendant
+  // 1 à 3 secondes : on cumule le maximum vu par équipe tant que personne n'est mort, et
+  // l'achat n'est considéré comme connu qu'une fois au moins 4 joueurs par équipe chargés
+  // (ou, si le panneau arrive en cours de round, quand la valeur officielle est là).
+  let buyA = null, buyB = null, econReady = false;
   const initA = ctA ? sb.ctInitialEquipmentValue : sb.tInitialEquipmentValue;
   const initB = ctA ? sb.tInitialEquipmentValue : sb.ctInitialEquipmentValue;
-  if (live && Number.isFinite(initA) && Number.isFinite(initB) && initA + initB > 0 && phase !== 'freezetime') {
-    // Valeur d'équipement officielle au début du round (scorebot HLTV).
-    buyA = buyFromValue(initA / Math.max(1, pA.length || 5));
-    buyB = buyFromValue(initB / Math.max(1, pB.length || 5));
-    if (mem.econ) mem.econ[current] = { A: buyA, B: buyB, final: true };
-  } else if (live) {
-    const lock = mem.econ?.[current];
-    if (phase === 'freezetime' || !lock || !lock.final) {
-      const frozen = phase === 'freezetime';
-      const aA = frozen ? pA : pA.filter((p) => p.alive), aB = frozen ? pB : pB.filter((p) => p.alive);
-      buyA = buyType(aA) ?? lock?.A ?? null;
-      buyB = buyType(aB) ?? lock?.B ?? null;
-      if (mem.econ && buyA && buyB && (!lock || frozen)) mem.econ[current] = { A: buyA, B: buyB, final: frozen };
-      else if (lock && !frozen) { buyA = lock.A; buyB = lock.B; }
-    } else {
-      buyA = lock.A; buyB = lock.B;
+  if (phase === 'freezetime') {
+    buyA = buyType(pA); buyB = buyType(pB);
+  } else if (phase === 'live' || phase === 'bomb_planted') {
+    const e = mem.econ ? (mem.econ[current] ??= { eA: 0, eB: 0, kA: 0, kB: 0 }) : { eA: 0, eB: 0, kA: 0, kB: 0 };
+    const opening = aliveOf5(pA) && aliveOf5(pB) && !sb.bombPlanted;
+    if (opening) {
+      e.eA = Math.max(e.eA, teamValue(pA)); e.eB = Math.max(e.eB, teamValue(pB));
+      e.kA = Math.max(e.kA, loaded(pA)); e.kB = Math.max(e.kB, loaded(pB));
     }
+    if (Number.isFinite(initA) && initA > 0) e.eA = Math.max(e.eA, initA);
+    if (Number.isFinite(initB) && initB > 0) e.eB = Math.max(e.eB, initB);
+    // Après le premier kill (plusieurs secondes de jeu), la valeur officielle est complète.
+    if (!e.A && ((e.kA >= 4 && e.kB >= 4) || (!opening && initA > 0 && initB > 0))) {
+      e.A = buyFromValue(e.eA / Math.max(1, pA.length || 5));
+      e.B = buyFromValue(e.eB / Math.max(1, pB.length || 5));
+      e.final = true;
+    }
+    if (!e.A && !opening) {
+      // Arrivé en cours de round sans valeur officielle : armes des survivants (estimation).
+      e.A = buyType(pA.filter((p) => p.alive)); e.B = buyType(pB.filter((p) => p.alive));
+      e.final = false;
+    }
+    if (e.A && e.B) { buyA = e.A; buyB = e.B; econReady = e.final; }
   } else if (nextRound) {
     buyA = predictBuy(pA); buyB = predictBuy(pB);
   }
@@ -391,7 +407,9 @@ export function toMatch(sb, meta = {}, mem = {}) {
         : Number.isInteger(meta.timer) ? meta.timer : null,
     // Bombe posée : le chrono du scorebot devient le compte à rebours de la bombe (40 s).
     bombTimer: phase === 'bomb_planted' && Number.isFinite(sb.roundTimeRemainingMS) ? sb.roundTimeRemainingMS / 1000 : null,
-    equipA: Number.isFinite(initA) ? initA : null, equipB: Number.isFinite(initB) ? initB : null,
+    equipA: mem.econ?.[current]?.eA || (Number.isFinite(initA) ? initA : null),
+    equipB: mem.econ?.[current]?.eB || (Number.isFinite(initB) ? initB : null),
+    econReady,
     facts: [...(sb.matchFacts || []), ...(sb.ctTeamFacts || []), ...(sb.tTeamFacts || [])]
       .map((f) => (typeof f === 'string' ? f : f?.text || f?.description || null)).filter(Boolean),
     buyA, buyB, nextBuy: nextRound,

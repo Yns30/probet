@@ -1,8 +1,8 @@
 import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
-import { toMatch, describeLog, seriesState } from './hltv.js';
+import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
-import { newJournal, record, backfill, logPicks, summarize } from './journal.js';
+import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -44,6 +44,12 @@ async function loadJournal() {
       : Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('probet:' + JKEY))
         .map((k) => [k.slice(7), JSON.parse(localStorage.getItem(k))]));
     for (const [k, v] of Object.entries(all)) if (k.startsWith(JKEY) && v) journal.maps[k.slice(JKEY.length)] = v;
+    const { removed, changed } = mergeDuplicates(journal);
+    if (removed.length || changed.length) {
+      journal.removed = removed;
+      for (const k of changed) journalDirty.add(k);
+      saveJournal();
+    }
   } catch { /* journal vierge */ }
 }
 function saveJournal() {
@@ -354,8 +360,9 @@ function renderFeed(src) {
 function process(id, src) {
   const mem = memFor(src.matchId || id);
   const meta = { ...src.meta, prematchOverride: prematchOverride(), timer: src.timer };
-  // Nouvelle map : on repart d'un historique vierge.
-  const key = `${src.scoreboard.mapName}|${seriesState(meta.maps, src.scoreboard.mapName).mapNumber}`;
+  // Nouvelle map : on repart d'un historique vierge. (Clé = nom de la map : le numéro de map
+  // dans la série change quand HLTV met à jour les résultats.)
+  const key = String(src.scoreboard.mapName || '');
   if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; }
   const m = toMatch(src.scoreboard, meta, mem);
   const res = analyze(m);
@@ -372,9 +379,10 @@ function process(id, src) {
   const picks = stablePicks(mem.picks, {
     list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 4,
     phase: m.phase, round: m.round, mapKey: mem.mapKey,
+    action: m.phase === 'bomb_planted' || (m.phase === 'live' && (m.aliveA < 5 || m.aliveB < 5)),
   });
   if (src.matchId && src.matchId !== 'demo') {
-    const jkey = `${src.matchId}|${key}`;
+    const jkey = mapKeyOf(src.matchId, m.map || key);
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
     backfill(journal, src.matchId, src.meta?.maps);
     logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB });

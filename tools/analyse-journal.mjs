@@ -3,7 +3,7 @@
 // Affiche le bilan, le calibrage, les paris par marché, et rejoue le modèle actuel sur les
 // débuts de round enregistrés (pour mesurer l'effet d'un changement du modèle).
 import { readFileSync } from 'node:fs';
-import { summarize, settle } from '../extension/journal.js';
+import { summarize, settle, mergeDuplicates } from '../extension/journal.js';
 import { toMatch } from '../extension/hltv.js';
 import { analyze } from '../extension/engine.js';
 
@@ -11,6 +11,7 @@ const files = process.argv.slice(2);
 if (!files.length) { console.error('usage : node tools/analyse-journal.mjs export.json …'); process.exit(1); }
 const j = { maps: {} };
 for (const f of files) Object.assign(j.maps, JSON.parse(readFileSync(f, 'utf8')).journal.maps);
+mergeDuplicates(j); // journaux ≤ 2.5.1 : doublons d'une même map
 
 const f3 = (x) => (x == null ? '—' : x.toFixed(3));
 const p0 = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`);
@@ -44,7 +45,7 @@ for (const [g, s] of groups) console.log(`  ${g} : ${s.won}/${s.n} = ${p0(s.won 
 const replay = [];
 for (const e of Object.values(j.maps)) {
   for (const R of Object.values(e.rounds)) {
-    if (!R.w || !R.start?.sb) continue;
+    if (!R.w || !R.start?.sb || R.start.ready === false) continue;
     try {
       const m = toMatch(R.start.sb, e.meta || {}, { econ: {} });
       const res = analyze(m);

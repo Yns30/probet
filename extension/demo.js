@@ -87,7 +87,9 @@ export function createDemoMatch(seed = 7) {
 
   const players = (team) => teams[team].nicks.map((nick, i) => ({
     nick, name: nick, alive: st.hp[team][i] > 0, hp: st.hp[team][i], money: Math.round(teams[team].money / 50) * 10,
-    primaryWeapon: { full: RIFLES[sideOf(team)][i % 4], force: 'galilar', eco: '', pistol: '' }[teams[team].kind] || '',
+    // Comme sur HLTV : pistolet de départ en eco, plus d'arme une fois mort.
+    primaryWeapon: st.hp[team][i] <= 0 ? ''
+      : { full: RIFLES[sideOf(team)][i % 4], force: 'galilar' }[teams[team].kind] || (sideOf(team) === 'CT' ? 'usp_silencer' : 'glock'),
     kevlar: teams[team].kind !== 'eco', helmet: teams[team].kind === 'full', hasDefuseKit: false,
     score: 0, deaths: 0, assists: 0, damagePrRound: 0,
   }));

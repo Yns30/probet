@@ -134,24 +134,18 @@ const avg = (xs) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : 0);
 // 4v2 ≈ 87 %, 4v1 ≈ 96 %, 2v1 ≈ 70 % (chaque joueur supplémentaire pèse davantage).
 const curve = (D) => 0.85 * D + 0.05 * D * Math.abs(D);
 
-// s : { aSide, aliveA, aliveB, playersA, playersB, hpA, hpB, bombPlanted, bombTimer, timer, buyA, buyB }
-export function liveRoundProb(s, base) {
+// Logit de la situation du round (point de vue CT), sans la force des équipes.
+function situationLogit(s, map) {
   const ctSideA = s.aSide === 'CT';
   const aliveCT = ctSideA ? s.aliveA : s.aliveB;
   const aliveT = ctSideA ? s.aliveB : s.aliveA;
-  const pFromCT = (p) => (ctSideA ? p : 1 - p);
-
-  if (s.aSide == null || aliveCT == null || aliveT == null) return sig(base.x);
-  if (aliveCT === 0) return pFromCT(0.003);
-  if (aliveT === 0 && !s.bombPlanted) return pFromCT(0.997);
-
-  const ct = ctRate(base.map);
-  const dCT = (ctSideA ? 1 : -1) * (base.d || 0) * 0.5;
+  if (aliveCT === 0) return { p: 0.003 };
+  if (aliveT === 0 && !s.bombPlanted) return { p: 0.997 };
+  const ct = ctRate(map);
   const plCT = ctSideA ? s.playersA : s.playersB, plT = ctSideA ? s.playersB : s.playersA;
   let uCT, uT, econ = 0;
   if (plCT?.length && plT?.length) {
     // Nombre de joueurs pondéré par les PV + écart de qualité d'équipement des survivants.
-    // Calage : full eco contre full buy ≈ 12 %, force-buy ≈ 28 %.
     const aCT = aliveOf(plCT), aT = aliveOf(plT);
     uCT = aCT.reduce((t, p) => t + hpUnit(p), 0); uT = aT.reduce((t, p) => t + hpUnit(p), 0);
     econ = 2.9 * (avg(aCT.map(quality)) - avg(aT.map(quality)));
@@ -170,7 +164,7 @@ export function liveRoundProb(s, base) {
   if (s.bombPlanted) {
     // Temps restant avant l'explosion contre temps de désamorçage (10 s, 5 s avec kit).
     const slack = s.bombTimer != null ? s.bombTimer - (kit ? 5 : 10) : null;
-    if (slack != null && slack <= 0) return pFromCT(0.01);
+    if (slack != null && slack <= 0) return { p: 0.01 };
     if (aliveT === 0) x = (kit ? 1.5 : 0.9) + 0.35 * (aliveCT - 1) - (slack != null && slack < 5 ? (5 - slack) * 0.35 : 0);
     else {
       x = -0.75 + 0.9 * curve(D) + (kit ? 0.3 : 0);
@@ -180,7 +174,23 @@ export function liveRoundProb(s, base) {
     x = 0.5 * logit(ct) + curve(D);
     if (s.timer != null && s.timer < 30) x += (30 - s.timer) * 0.06; // les T doivent poser
   }
-  return pFromCT(clamp(sig(x + dCT + econ), 0.003, 0.997));
+  return { x: x + econ };
+}
+
+// Probabilité que A gagne le round en cours.
+//  - 5 contre 5 sans bombe : probabilité d'avant-round (économie, force, côté : base.x). Sur
+//    les matchs enregistrés, elle est mieux calibrée que le détail joueur par joueur, qui
+//    comptait deux fois la force des équipes.
+//  - dès le premier kill ou la bombe : modèle de situation (joueurs en vie, PV, armes, kit,
+//    bombe, chrono), calé sur les taux pro et vérifié sur les moments enregistrés.
+// s : { aSide, aliveA, aliveB, playersA, playersB, hpA, hpB, bombPlanted, bombTimer, timer, buyA, buyB }
+export function liveRoundProb(s, base) {
+  const ctSideA = s.aSide === 'CT';
+  if (s.aSide == null || s.aliveA == null || s.aliveB == null) return sig(base.x);
+  if (s.aliveA >= 5 && s.aliveB >= 5 && !s.bombPlanted) return sig(base.x);
+  const now = situationLogit(s, base.map);
+  const pCT = now.p ?? clamp(sig(now.x + (ctSideA ? 1 : -1) * (base.d || 0) * 0.5), 0.003, 0.997);
+  return ctSideA ? pCT : 1 - pCT;
 }
 
 // ---------- Propagation exacte des scores ----------

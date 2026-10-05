@@ -4,7 +4,7 @@ import { analyze, markets } from '../extension/engine.js';
 import { toMatch } from '../extension/hltv.js';
 import { stablePicks } from '../extension/picks.js';
 import { createDemoMatch } from '../extension/demo.js';
-import { newJournal, record, backfill, logPicks, settle, summarize } from '../extension/journal.js';
+import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates } from '../extension/journal.js';
 
 // Suit une map simulée entière comme le ferait le panneau.
 function playMap(seed) {
@@ -88,4 +88,35 @@ test('paris VALUE : gain en unités à la cote saisie', () => {
   assert.equal(sm.picks.value.n, 2);
   assert.equal(sm.picks.value.won, 1);
   assert.equal(sm.picks.value.units, 0); // +1 − 1
+});
+
+test('doublons des anciennes versions : une map enregistrée sous plusieurs clés est fusionnée', () => {
+  const j = newJournal();
+  j.maps['9|de_nuke|1'] = { matchId: 9, map: 'nuke', rounds: { 1: { w: 'A' } }, picks: { 'lean:map:A': { id: 'map:A' } }, final: null, started: 5 };
+  j.maps['9|de_nuke|2'] = { matchId: 9, map: 'nuke', rounds: { 1: { w: 'A', start: { pr: 0.5 } }, 2: { w: 'B', start: { pr: 0.4 } } }, picks: {}, final: null, started: 7 };
+  j.maps['9|de_nuke|3'] = { matchId: 9, map: 'nuke', rounds: { 2: { w: 'B' } }, picks: {}, final: { a: 13, b: 5, w: 'A' }, started: 9 };
+  j.maps['9|de_inferno'] = { matchId: 9, map: 'inferno', rounds: {}, picks: {}, final: null };
+  const { removed, changed } = mergeDuplicates(j);
+  assert.deepEqual(Object.keys(j.maps).sort(), ['9|inferno', '9|nuke']);
+  assert.equal(removed.length, 4);
+  assert.deepEqual(changed.sort(), ['9|inferno', '9|nuke']);
+  const e = j.maps['9|nuke'];
+  assert.equal(e.rounds[1].start.pr, 0.5);
+  assert.equal(e.rounds[2].w, 'B');
+  assert.deepEqual(e.final, { a: 13, b: 5, w: 'A' });
+  assert.ok(e.picks['lean:map:A']);
+  assert.equal(e.started, 5);
+  assert.deepEqual(mergeDuplicates(j), { removed: [], changed: [] }); // idempotent
+});
+
+test('début de round enregistré seulement une fois les achats reçus', () => {
+  const j = newJournal();
+  const m = (ready, buy) => ({ map: 'nuke', names: ['A', 'B'], phase: 'live', scoreA: 2, scoreB: 1, aSide: 'CT', aliveA: 5, aliveB: 5, econReady: ready, buyA: buy, buyB: 'full', rounds: [] });
+  const res = (pr) => ({ round: 4, pRound: pr, pMap: 0.6 });
+  record(j, { key: 'k', matchId: 1, m: m(false, 'eco'), res: res(0.2) });
+  assert.equal(j.maps.k.rounds[4].start.ready, false);
+  record(j, { key: 'k', matchId: 1, m: m(true, 'full'), res: res(0.5) });
+  assert.equal(j.maps.k.rounds[4].start.pr, 0.5);
+  record(j, { key: 'k', matchId: 1, m: m(true, 'full'), res: res(0.55) });
+  assert.equal(j.maps.k.rounds[4].start.pr, 0.5); // figé une fois complet
 });

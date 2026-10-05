@@ -205,18 +205,44 @@ test('diagnostic réel (G2-1win, round 10) : champs du scorebot exploités', asy
   assert.ok(res.pMap > 0.4 && res.pMap < 0.8, `pMap=${res.pMap}`);
 });
 
-test('économie dans le round : eco et force-buy contre full buy (taux pro)', () => {
+test('économie : eco et force-buy contre full buy (taux pro), à 5v5 puis en cours de round', async () => {
+  const { roundLogit, sig } = await import('../extension/engine.js');
+  // À 5 contre 5, la probabilité est celle d'avant-round (économie, force, côté).
+  const pre = (buy) => {
+    const ctx = (aSide, A, B) => ({ map: 'mirage', d: 0, aSide, econ: { A, B } });
+    return (sig(roundLogit(6, ctx('CT', buy, 'full'))) + sig(roundLogit(6, ctx('T', buy, 'full')))) / 2;
+  };
+  assert.ok(pre('eco') > 0.12 && pre('eco') < 0.25, `eco=${pre('eco')}`);
+  assert.ok(pre('force') > 0.25 && pre('force') < 0.4, `force=${pre('force')}`);
   const team = (o) => Array.from({ length: 5 }, () => ({ alive: true, hp: 100, ...o }));
   const fullBuy = team({ primaryWeapon: 'ak47', helmet: true, kevlar: true });
-  const p = (players) => {
-    const asCT = liveRoundProb({ aSide: 'CT', aliveA: 5, aliveB: 5, playersA: players, playersB: fullBuy }, { map: 'mirage', d: 0 });
-    const asT = 1 - liveRoundProb({ aSide: 'CT', aliveA: 5, aliveB: 5, playersA: fullBuy, playersB: players }, { map: 'mirage', d: 0 });
-    return (asCT + asT) / 2;
-  };
-  const eco = p(team({ primaryWeapon: '', kevlar: false, helmet: false }));
-  const force = p(team({ primaryWeapon: 'mp9', kevlar: true, helmet: false }));
-  assert.ok(eco > 0.08 && eco < 0.17, `eco=${eco}`);
-  assert.ok(force > 0.22 && force < 0.34, `force=${force}`);
+  const ecoT = team({ primaryWeapon: 'glock', kevlar: false, helmet: false });
+  const base = { map: 'mirage', d: 0, x: -1.2 };
+  assert.equal(liveRoundProb({ aSide: 'T', aliveA: 5, aliveB: 5, playersA: ecoT, playersB: fullBuy }, base), sig(-1.2));
+  // 4 contre 4 : l'écart d'équipement des survivants compte.
+  const kill = (ps) => ps.map((p, i) => (i === 0 ? { ...p, alive: false, hp: 0 } : p));
+  const p44 = liveRoundProb({ aSide: 'T', aliveA: 4, aliveB: 4, playersA: kill(ecoT), playersB: kill(fullBuy) }, base);
+  assert.ok(p44 > 0.03 && p44 < 0.2, `4v4 eco=${p44}`);
+});
+
+test('achats reçus joueur par joueur en début de round : pas de faux « eco »', () => {
+  const p = (o) => ({ alive: true, hp: 100, money: 0, ...o });
+  const rifles = (n) => Array.from({ length: 5 }, (_, i) => p(i < n ? { primaryWeapon: 'ak47', helmet: true, kevlar: true, equipmentValue: 5100 } : { equipmentValue: 0 }));
+  const sb = (nA, nB, init) => ({
+    ...SB, CT: rifles(nA), TERRORIST: rifles(nB), bombPlanted: false, currentRoundState: 'started', frozen: false,
+    ctInitialEquipmentValue: init, tInitialEquipmentValue: init, roundTimeRemainingMS: 114500,
+  });
+  const mem = { econ: {} };
+  // Première trame : rien n'est encore arrivé → achat inconnu, pas « eco contre eco ».
+  let m = toMatch(sb(0, 1, 0), META, mem);
+  assert.equal(m.econReady, false);
+  assert.notEqual(m.buyA, 'eco');
+  m = toMatch(sb(3, 2, 9000), META, mem);
+  assert.equal(m.econReady, false);
+  m = toMatch(sb(5, 5, 25500), META, mem);
+  assert.equal(m.econReady, true);
+  assert.deepEqual([m.buyA, m.buyB], ['full', 'full']);
+  assert.equal(mem.econ[6].A, 'full');
 });
 
 test('économie du round suivant selon l’issue du round', async () => {

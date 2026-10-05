@@ -64,3 +64,15 @@ test('les paris VALUE restent en direct pendant le round', () => {
   const out = stablePicks(st, { ...ctx, phase: 'live', odds: { 'map:A': 2.2 }, list: [mk('map:A', 0.55)] });
   assert.equal(out[0].kind, 'value');
 });
+
+test('tendances recalculées jusqu’au premier kill (achats encore en cours de réception)', () => {
+  const st = {};
+  const ctx = { mapKey: 'm', round: 4, phase: 'live' };
+  stablePicks(st, { ...ctx, action: false, list: [mk('round4:A', 0.7)] });
+  // Les achats arrivent : la probabilité du round change avant toute action → mise à jour.
+  let out = stablePicks(st, { ...ctx, action: false, list: [mk('round4:A', 0.45), mk('round4:B', 0.65, 0, 'round4')] });
+  assert.deepEqual(out.map((p) => p.id), ['round4:B']);
+  // Premier kill : figé.
+  out = stablePicks(st, { ...ctx, action: true, list: [mk('round4:A', 0.8), mk('round4:B', 0.2, 0, 'round4')] });
+  assert.equal(out.length, 0); // B n'est plus favori : retiré, A n'est pas ajouté en cours de round
+});

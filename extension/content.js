@@ -127,12 +127,26 @@
     for (const attr of ['data-team1-players-data', 'data-team2-players-data']) {
       try {
         const raw = document.querySelector('.lineups-compare-container')?.getAttribute(attr);
-        for (const p of Object.values(JSON.parse(raw || '{}'))) {
-          if (p.playerId && typeof p.numericRating === 'number') out[p.playerId] = p.numericRating;
+        for (const [key, p] of Object.entries(JSON.parse(raw || '{}'))) {
+          const id = p?.playerId ?? key; // objet indexé par identifiant de joueur
+          if (id && typeof p?.numericRating === 'number') out[id] = p.numericRating;
         }
       } catch { /* bloc absent */ }
     }
     return out;
+  }
+
+  // Identifiants des joueurs de chaque équipe (pour savoir quelle équipe est CT sans se
+  // fier uniquement au scorebot, qui change les équipes de côté en plusieurs étapes).
+  function lineupIds() {
+    const ids = (attr) => {
+      try {
+        const raw = document.querySelector('.lineups-compare-container')?.getAttribute(attr);
+        return Object.entries(JSON.parse(raw || '{}')).map(([key, p]) => Number(p?.playerId ?? key)).filter(Boolean);
+      } catch { return []; }
+    };
+    const l1 = ids('data-team1-players-data'), l2 = ids('data-team2-players-data');
+    return l1.length && l2.length ? { team1: l1, team2: l2 } : null;
   }
 
   function form(i) {
@@ -194,6 +208,7 @@
       maps,
       mapStats: mapStats(),
       playerRatings: playerRatings(),
+      lineups: lineupIds(),
       odds,
       h2h: h2h.length >= 3 ? { w1: int(txt(h2h[0])), w2: int(txt(h2h[2])) } : null,
       hltvProb: hltvWinProb(),

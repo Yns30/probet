@@ -310,3 +310,24 @@ test('historique HLTV incomplet : complété par les changements de score observ
   assert.equal(m.rounds.map((r) => r.winner).join(''), 'ABAAB');
   assert.ok(m.rounds.every((r) => !r.synthetic && r.aSide === 'CT'));
 });
+
+test('changement de côté : trame où les équipes ont changé de côté mais pas les scores', () => {
+  const vit = [1, 2, 3, 4, 5].map((id) => ({ dbId: id, name: `v${id}`, alive: true, hp: 100 }));
+  const fal = [6, 7, 8, 9, 10].map((id) => ({ dbId: id, name: `f${id}`, alive: true, hp: 100 }));
+  const meta = { team1: { name: 'Vitality', id: 9565 }, team2: { name: 'Falcons', id: 11283 }, lineups: { team1: [1, 2, 3, 4, 5], team2: [6, 7, 8, 9, 10] } };
+  const hist = { firstHalf: [], secondHalf: [] };
+  const frame = (o) => ({ mapName: 'de_dust2', live: true, currentRoundState: 'started', ctMatchHistory: hist, terroristMatchHistory: hist, ...o });
+  const mem = { econ: {}, winners: {} };
+  // Fin de la 1re mi-temps : Vitality (T) mène 9-3.
+  let m = toMatch(frame({ CT: fal, TERRORIST: vit, ctTeamId: 11283, tTeamId: 9565, counterTerroristScore: 3, terroristScore: 9, currentRound: 12 }), meta, mem);
+  assert.deepEqual([m.names[0], m.scoreA, m.scoreB, m.aSide], ['Vitality', 9, 3, 'T']);
+  // Trame de transition : Vitality passe CT, mais les scores sont encore ceux de la 1re mi-temps.
+  m = toMatch(frame({ CT: vit, TERRORIST: fal, ctTeamId: 9565, tTeamId: 11283, counterTerroristScore: 3, terroristScore: 9, currentRound: 13, currentRoundState: 'over' }), meta, mem);
+  assert.deepEqual([m.scoreA, m.scoreB, m.aSide], [9, 3, 'CT']);
+  // Trame inverse : identifiants d'équipe pas encore mis à jour, joueurs déjà passés de côté.
+  m = toMatch(frame({ CT: vit, TERRORIST: fal, ctTeamId: 11283, tTeamId: 9565, counterTerroristScore: 9, terroristScore: 3, currentRound: 13 }), meta, { econ: {} });
+  assert.deepEqual([m.scoreA, m.scoreB, m.aSide], [9, 3, 'CT']);
+  // Le score d'après est normal.
+  m = toMatch(frame({ CT: vit, TERRORIST: fal, ctTeamId: 9565, tTeamId: 11283, counterTerroristScore: 10, terroristScore: 3, currentRound: 14 }), meta, mem);
+  assert.deepEqual([m.scoreA, m.scoreB], [10, 3]);
+});

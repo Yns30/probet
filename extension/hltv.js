@@ -280,7 +280,20 @@ export function seriesObs(maps, liveMap) {
 // ---------- Scoreboard → entrée du moteur ----------
 
 // L'équipe actuellement CT est-elle l'équipe 1 de la page (= "A") ?
+// Côté de l'équipe 1 d'après ses joueurs (identifiants des compositions de la page).
+export function ctIsTeam1ByPlayers(sb, meta) {
+  const l = meta?.lineups;
+  if (!l?.team1?.length || !l?.team2?.length) return null;
+  const in1 = new Set(l.team1.map(Number)), in2 = new Set(l.team2.map(Number));
+  let vote = 0;
+  for (const p of sb.CT || []) vote += in1.has(Number(p.dbId)) ? 1 : in2.has(Number(p.dbId)) ? -1 : 0;
+  for (const p of sb.TERRORIST || []) vote += in2.has(Number(p.dbId)) ? 1 : in1.has(Number(p.dbId)) ? -1 : 0;
+  return vote >= 3 ? true : vote <= -3 ? false : null;
+}
+
 export function ctIsTeam1(sb, meta) {
+  const byPlayers = ctIsTeam1ByPlayers(sb, meta);
+  if (byPlayers != null) return byPlayers;
   const t1 = meta?.team1 || {}, t2 = meta?.team2 || {};
   if (t1.id && sb.ctTeamId === t1.id) return true;
   if (t1.id && sb.tTeamId === t1.id) return false;
@@ -311,8 +324,17 @@ const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
 export function toMatch(sb, meta = {}, mem = {}) {
   const ctA = ctIsTeam1(sb, meta);
   const aSide = ctA ? 'CT' : 'T';
-  const scoreA = (ctA ? sb.counterTerroristScore : sb.terroristScore) ?? 0;
-  const scoreB = (ctA ? sb.terroristScore : sb.counterTerroristScore) ?? 0;
+  let scoreA = (ctA ? sb.counterTerroristScore : sb.terroristScore) ?? 0;
+  let scoreB = (ctA ? sb.terroristScore : sb.counterTerroristScore) ?? 0;
+  // Au changement de côté, HLTV peut envoyer une trame où les équipes ont changé de côté mais
+  // pas encore les scores (ou l'inverse). Le score d'une équipe ne baisse jamais et un seul
+  // round se joue à la fois : si la trame contredit le dernier score connu et que le score
+  // inversé est cohérent, on le remet dans le bon sens.
+  const prevScore = mem.lastScore;
+  if (prevScore && scoreA !== scoreB) {
+    const fits = (a, b) => a >= prevScore.a && b >= prevScore.b && a + b - prevScore.a - prevScore.b <= 1;
+    if (!fits(scoreA, scoreB) && fits(scoreB, scoreA)) [scoreA, scoreB] = [scoreB, scoreA];
+  }
   const played = scoreA + scoreB;
   const withForm = (list) => (list || []).map((p) => ({ ...p, form: formFactor(p, played, meta.playerRatings), rating: matchRating(p, played) }));
   const pA = withForm(ctA ? sb.CT : sb.TERRORIST);
@@ -323,10 +345,10 @@ export function toMatch(sb, meta = {}, mem = {}) {
   const winners = winnersByRound(sb, ctA ? 'A' : 'B', ctA ? 'B' : 'A');
   // Historique HLTV parfois incomplet : on complète avec les changements de score observés
   // en direct (score 5-2 → 6-2 : A a gagné le round 8).
+  const prev = mem.lastScore;
+  if (mem.econ) mem.lastScore = { a: scoreA, b: scoreB };
   if (mem.winners) {
-    const prev = mem.lastScore;
     if (prev && played === prev.a + prev.b + 1) mem.winners[played] = scoreA > prev.a ? 'A' : 'B';
-    mem.lastScore = { a: scoreA, b: scoreB };
     for (const [r, w] of Object.entries(mem.winners)) if (!winners.has(+r) && +r <= played) winners.set(+r, w);
   }
   let rounds = [];

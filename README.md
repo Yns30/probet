@@ -55,6 +55,23 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 | Maps déjà jouées dans la série, **mi-temps par mi-temps** | Preuve directe de l'écart entre les équipes (avec le côté CT/T de chaque moitié) |
 | Format BO1/BO3/BO5, maps gagnées | Probabilité de gagner la série |
 
+## Comment parier avec ProBet
+
+La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (round en cours, vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :
+
+| Statut | Signification | Que faire |
+|---|---|---|
+| **À JOUER** (vert) | Sélection solide | Jouez seulement si la cote du bookmaker est **au moins égale à la cote minimale** affichée |
+| **SI BONNE COTE** (orange) | Quasi acquis | La cote sera sûrement trop basse ; jouez seulement si elle atteint le minimum |
+| **PAS DE PARI** (gris) | Trop incertain, ou cote saisie trop basse | Ne jouez pas ce marché pour l'instant |
+
+1. Repérez une ligne **À JOUER**, ouvrez ce marché chez votre bookmaker.
+2. Comparez sa cote à la **cote minimale** de ProBet : au-dessus, le pari est rentable à long terme ; en dessous, passez.
+3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
+4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble.
+
+Les conseils sont choisis entre les rounds et figés pendant le round (mention « conseils figés pendant le round ») ; une cote que vous saisissez est évaluée tout de suite.
+
 ## Marchés calculés
 
 Vainqueur du round en cours, vainqueur de la map, total de rounds (plus/moins), handicaps, prolongation oui/non, vainqueur de la série.
@@ -137,6 +154,7 @@ extension/
   hltv.js         traduit les données HLTV en état de match (scores, côtés, économie, phases, avant-match)
   engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
   picks.js        stabilisation des paris affichés (figés pendant le round, hystérésis)
+  advice.js       tableau « Que jouer ? » : une ligne par marché, statut et cote minimale
   journal.js      journal des matchs : prévisions, résultats, paris réglés, bilan
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)

@@ -67,19 +67,12 @@ main { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 10px; }
 .rinfo .bomb { color: var(--bad); font-weight: 700; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-.card > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.card > header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 2px 10px; margin-bottom: 10px; }
+.card > header h2 { white-space: nowrap; }
 .conf { font-size: 11px; color: var(--muted); }
 .conf b { color: var(--text); }
 .conf .frozen { color: var(--muted); font-style: italic; }
 
-#picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.pick { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
-.pick.value { border-color: var(--good); }
-.pick .g { font-size: 11px; color: var(--muted); }
-.pick .sel { font-size: 15px; font-weight: 700; }
-.pick .p { grid-row: span 2; text-align: right; font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; align-self: center; }
-.pick .act { grid-column: 1 / -1; display: flex; gap: 4px 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-top: 4px; }
-.pick .act b { color: var(--text); }
 .badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
 .badge.value { background: rgb(63 185 80 / .15); color: var(--good); }
 .badge.lean { background: var(--line); color: var(--text-2); }
@@ -144,3 +137,27 @@ dialog h3 { font-size: 13px; margin: 14px 0 4px; }
 dialog .hint { word-break: normal; overflow-wrap: anywhere; }
 .row > * { min-width: 0; }
 dialog input { width: 100%; box-sizing: border-box; }
+
+/* Que jouer ? : tableau fixe, un marché par ligne */
+#advice { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.adv { padding: 9px 11px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; align-items: center; }
+.adv-top { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.adv-mk { font-size: 11px; color: var(--muted); }
+.adv-tag { font-size: 10px; font-weight: 800; letter-spacing: .03em; padding: 2px 7px; border-radius: 4px; background: var(--line); color: var(--text-2); white-space: nowrap; }
+.adv-line { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.adv-sel { font-size: 15px; font-weight: 700; }
+.adv-p { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.adv-how { font-size: 12px; color: var(--text-2); line-height: 1.4; }
+.adv-how b { color: var(--text); }
+.adv-note { grid-column: 1 / -1; font-size: 11px; color: var(--muted); font-style: italic; }
+.adv-odds { margin: 0; flex-direction: row; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); grid-column: 2; grid-row: 3; }
+.adv-odds input { width: 56px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; font-size: 12px; }
+.adv.go { border-color: var(--good); }
+.adv.go .adv-tag { background: rgb(63 185 80 / .18); color: var(--good); }
+.adv.s-sure .adv-tag { background: rgb(227 160 8 / .18); color: var(--warn); }
+.adv.s-wait, .adv.s-low, .adv.s-none { opacity: .72; }
+.adv.s-none { grid-template-columns: 1fr; }
+.howto { margin-top: 10px; }
+.howto summary { font-size: 12px; color: var(--text-2); }
+.howto ol { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--text-2); line-height: 1.5; display: flex; flex-direction: column; gap: 4px; }
+.howto b { color: var(--text); }

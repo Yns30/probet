@@ -1,5 +1,6 @@
 import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
+import { buildAdvice } from './advice.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
@@ -290,27 +291,43 @@ function facts(m, res, src) {
   return out.slice(0, 5);
 }
 
-function renderPicks(picks, conf) {
-  $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
-  if (!picks.length) {
-    $('picks').innerHTML = '<li class="none">Rien d’intéressant pour l’instant : ProBet surveille le match. Entrez les cotes de votre bookmaker dans « Tous les marchés » pour détecter les paris à valeur.</li>';
-    return picks;
-  }
-  if (picks.some((p) => p.frozen)) $('conf').innerHTML += ' · <span class="frozen">tendances figées pendant le round</span>';
+const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI' };
+
+function adviceText(r) {
   const bank = Number(settings.bank) || 0;
-  $('picks').innerHTML = picks.map((p) => {
-    const act = p.kind === 'value'
-      ? `<span>Cote <b>${dec(p.odds)}</b> (juste ${dec(p.fair)})</span><span>Avantage prudent <b>+${dec(p.ev * 100, 1)}%</b></span>
-         <span>Mise <b>${dec(p.stake * 100, 1)}%</b> de la bankroll${bank ? ` (${Math.round(p.stake * bank)} €)` : ''}</span>`
-      : `<span>À jouer si la cote est ≥ <b>${dec(p.target)}</b></span><span>Cote juste ${dec(p.fair)}</span>${p.frozen && Math.abs(p.now - p.p) >= 0.03 ? `<span>Maintenant ${pct(p.now)}</span>` : ''}`;
-    return `<li class="pick ${p.kind}">
-      <div class="g">${esc(p.group)}<span class="badge ${p.kind}">${p.kind === 'value' ? 'VALUE' : 'TENDANCE'}</span></div>
-      <div class="p">${pct(p.p)}</div>
-      <div class="sel">${esc(p.label)}</div>
-      <div class="act">${act}</div>
+  switch (r.status) {
+    case 'value':
+      return `Cote <b>${dec(r.odds)}</b> ≥ ${dec(r.min)} : avantage <b>+${dec(r.ev * 100, 1)} %</b> · mise <b>${dec(r.stake * 100, 1)} %</b> de la bankroll${bank ? ` (${Math.round(r.stake * bank)} €)` : ''}`;
+    case 'play':
+      return `Jouez si la cote est d'au moins <b>${dec(r.min)}</b>`;
+    case 'sure':
+      return `Très probable, mais la cote sera sûrement trop basse : seulement si elle atteint <b>${dec(r.min)}</b>`;
+    case 'low':
+      return `Votre cote ${dec(r.odds)} est trop basse : il faut au moins <b>${dec(r.min)}</b>`;
+    case 'wait':
+      return `Trop incertain : ne pariez pas sur ce marché pour l'instant`;
+    default:
+      return 'Aucune ligne assez sûre pour l\'instant';
+  }
+}
+
+function renderAdvice(picks, list, conf, mem) {
+  $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
+  if ($('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
+  mem.advice ??= {};
+  const rows = buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 });
+  if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
+  $('advice').innerHTML = rows.map((r) => {
+    const go = r.status === 'play' || r.status === 'value';
+    const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
+      ? `<div class="adv-note">Maintenant ${pct(r.now)} : le conseil est figé jusqu'à la fin du round</div>` : '';
+    return `<li class="adv s-${r.status}${go ? ' go' : ''}">
+      <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
+      ${r.id ? `<div class="adv-line"><span class="adv-sel">${esc(r.sel)}</span><span class="adv-p">${pct(r.p)}</span></div>` : ''}
+      <div class="adv-how">${adviceText(r)}</div>${frozen}
+      ${r.id ? `<label class="adv-odds">Cote <input data-mid="${esc(r.id)}" inputmode="decimal" value="${r.odds ? dec(r.odds) : ''}" placeholder="—"></label>` : ''}
     </li>`;
   }).join('');
-  return picks;
 }
 
 function renderMarkets(list, mem) {
@@ -323,7 +340,7 @@ function renderMarkets(list, mem) {
       <td class="${ev ? (ev.ev > 0 ? 'pos' : 'neg') : ''}">${ev ? `${ev.ev > 0 ? '+' : ''}${dec(ev.ev * 100, 1)}%` : ''}</td></tr>`;
   }).join('');
 }
-$('marketRows').addEventListener('change', (e) => {
+function onOddsInput(e) {
   const id = e.target.dataset.mid;
   const src = sources.get(selected);
   if (!id || !src) return;
@@ -332,7 +349,9 @@ $('marketRows').addEventListener('change', (e) => {
   if (v > 1) mem.odds[id] = v; else delete mem.odds[id];
   e.target.blur();
   render();
-});
+}
+$('marketRows').addEventListener('change', onOddsInput);
+$('advice').addEventListener('change', onOddsInput);
 
 function renderPre(m, src) {
   const [A, B] = m.names;
@@ -377,7 +396,7 @@ function process(id, src) {
   const conf = confidence(res, 0.95, m.rounds.length);
   mem.picks ??= {};
   const picks = stablePicks(mem.picks, {
-    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 4,
+    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 99,
     phase: m.phase, round: m.round, mapKey: mem.mapKey,
     action: m.phase === 'bomb_planted' || (m.phase === 'live' && (m.aliveA < 5 || m.aliveB < 5)),
   });
@@ -418,7 +437,7 @@ function render() {
   $('facts').innerHTML = facts(m, res, src).map((f) => `<li>${esc(f)}</li>`).join('');
   renderFeed(src);
   renderPre(m, src);
-  renderPicks(picks, conf);
+  renderAdvice(picks, list, conf, mem);
   renderMarkets(list, mem);
 }
 

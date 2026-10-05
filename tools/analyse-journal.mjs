@@ -32,7 +32,11 @@ for (const e of Object.values(j.maps)) {
   for (const p of Object.values(e.picks)) {
     const won = settle(p.id, e);
     if (won == null) continue;
-    const g = `${p.kind} ${p.id.replace(/\d+(\.\d+)?|-/g, '').replace(/:.*/, '')}`;
+    let g = `${p.kind} ${p.id.replace(/\d+(\.\d+)?|-/g, '').replace(/:.*/, '')}`;
+    if (p.id.startsWith('round')) {
+      const R = e.rounds[p.id.match(/round(\d+)/)[1]];
+      g += R?.start && p.t >= R.start.t ? ' (achats connus)' : ' (entre les rounds)';
+    }
     const s = groups.get(g) ?? { n: 0, won: 0, p: 0 };
     s.n++; s.won += won; s.p += p.p ?? 0;
     groups.set(g, s);

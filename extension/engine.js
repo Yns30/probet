@@ -23,7 +23,7 @@ const DEFAULT_CT = 0.51;
 //  - seriesWeight : poids des rounds des maps précédentes de la série.
 //  - carry : avantage du vainqueur du round précédent (argent, armes gardées) hors pistols
 //    et remises à zéro ; il crée les séries de rounds observées en pro.
-export const CAL = { carry: 0.35, roundWeight: 0.6, priorSdOdds: 0.18, priorSdPage: 0.22, priorSdNone: 0.28, seriesWeight: 0.35 };
+export const CAL = { carry: 0.35, roundWeight: 0.6, priorSdOdds: 0.18, priorSdPage: 0.22, priorSdNone: 0.28, seriesWeight: 0.35, preBuy: 0.55 };
 
 const BUY_STRENGTH = { eco: 0, force: 1.1, half: 1.6, full: 2.5 };
 
@@ -359,8 +359,14 @@ export function analyze(match) {
     final.set(`${a}-${b}`, 1);
   } else {
     let pr = 0;
+    // Achats du round pas encore connus (pause, temps d'achat, premières secondes du round) :
+    // l'économie n'est qu'une prévision, la probabilité est tempérée (CAL.preBuy, mesuré sur
+    // les journaux : 72 % annoncés entre les rounds → 63 % observés).
+    const untouched = !(match.aliveA < 5 || match.aliveB < 5 || match.bombPlanted);
+    const preBuy = phase === 'round_over' || phase === 'freezetime' || (phase === 'live' && match.econReady === false && untouched);
     for (const { d, w } of post.support) {
-      const base = { map, d, x: roundLogit(r, { map, d, aSide, hist, econ, last }) };
+      const x = roundLogit(r, { map, d, aSide, hist, econ, last });
+      const base = { map, d, x: preBuy ? CAL.preBuy * x : x };
       const live = phase === 'live' || phase === 'bomb_planted';
       const p = live ? liveRoundProb({ ...match, aSide }, base) : sig(base.x);
       pr += w * p;

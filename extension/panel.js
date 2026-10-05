@@ -385,7 +385,7 @@ function process(id, src) {
     const jkey = mapKeyOf(src.matchId, m.map || key);
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
     backfill(journal, src.matchId, src.meta?.maps);
-    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB });
+    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
   }
   return { mem, m, res, list, conf, picks };

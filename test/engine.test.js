@@ -81,3 +81,13 @@ test('marchés cohérents et détection de value', () => {
   assert.equal(evaluateBet(0.5, 1.9).stake, 0);
   assert.ok(evaluateBet(0.6, 2.0).stake > 0);
 });
+
+test('entre les rounds (achats pas encore connus), la probabilité du round est tempérée', () => {
+  const st = { ...base, scoreA: 5, scoreB: 3, buyA: 'full', buyB: 'eco', aliveA: 5, aliveB: 5 };
+  const known = analyze({ ...st, phase: 'live', econReady: true }).pRound;
+  const before = analyze({ ...st, phase: 'freezetime' }).pRound;
+  const waiting = analyze({ ...st, phase: 'live', econReady: false }).pRound;
+  assert.ok(known > 0.75, `achats connus ${known}`);
+  assert.ok(before > 0.5 && before < known - 0.08, `entre les rounds ${before}`);
+  near(waiting, before, 0.02);
+});

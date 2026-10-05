@@ -95,7 +95,7 @@ export function backfill(j, matchId, maps) {
 }
 
 // Paris affichés : chaque pari est noté la première fois qu'il apparaît.
-export function logPicks(j, key, picks, { round, a, b, t = Date.now() } = {}) {
+export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.now() } = {}) {
   const e = j.maps[key];
   if (!e) return;
   for (const p of picks) {
@@ -103,7 +103,7 @@ export function logPicks(j, key, picks, { round, a, b, t = Date.now() } = {}) {
     if (e.picks[id]) continue;
     e.picks[id] = {
       id: p.id, kind: p.kind, group: p.group, label: p.label, p: r3(p.p), pc: r3(p.pc), sd: r3(p.sd),
-      odds: p.odds ?? null, target: r3(p.target), round, a, b, t,
+      odds: p.odds ?? null, target: r3(p.target), round, a, b, t, phase, ready,
     };
   }
 }

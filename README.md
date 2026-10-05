@@ -106,12 +106,19 @@ Les paramètres du modèle (`CAL` dans `extension/engine.js`) sont vérifiés su
 - *Tendances* figées à partir du premier kill (et non plus dès le début du round, quand les achats ne sont pas encore connus).
 - Résultat sur les débuts de round : score de Brier 0,246 → 0,234. Sur la map, ProBet fait mieux que HLTV sur 7 des 9 maps.
 
+**Deuxième recalage sur 21 maps (dont 9 enregistrées avec les achats bien lus) :**
+
+- Avec la version 2.6, les débuts de round passent à un score de Brier de 0,218 (0,246 avant), et sur la map ProBet fait nettement mieux que la probabilité live de HLTV (0,162 contre 0,209 aux mêmes moments).
+- *Prévisions entre les rounds tempérées.* Les tendances « vainqueur du round » proposées pendant la pause ou l'achat reposaient sur l'économie *prévue* : 72 % annoncés, 63 % observés, alors qu'au début du round (achats connus) la probabilité était juste. Tant que les achats ne sont pas connus, la probabilité du round est maintenant tempérée (`CAL.preBuy` = 0,55 sur l'échelle logit).
+- Marchés de la map (vainqueur, handicaps, totaux, prolongation) : bien calibrés à tous les moments enregistrés ; les paris perdus se concentrent sur quelques maps à grosse remontée (8-2 → 8-13), où plusieurs paris sur la même équipe perdent ensemble.
+
 Le modèle tient compte du fait que les rounds s'enchaînent par séries : le vainqueur d'un round garde l'avantage économique au suivant. Sans cela, une avance au score paraîtrait plus définitive qu'elle ne l'est.
 
 ## Limites
 
 - HLTV a lui aussi quelques secondes de retard sur le match réel, et les cotes live bougent vite. Vérifiez le score chez votre bookmaker avant de valider un pari.
 - Le modèle est **statistique** : il estime des probabilités, il ne garantit rien. L'avantage n'existe que si la cote du bookmaker est nettement au-dessus de la cote juste.
+- Les paris « vainqueur de la map » et « handicap » sur la même équipe gagnent ou perdent presque toujours ensemble : en jouer plusieurs sur une même map revient à miser plus gros sur un seul scénario.
 - Ne jouez que ce que vous pouvez perdre. Réservé aux 18 ans et plus.
 
 ## Structure

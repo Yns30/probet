@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProBet CS2",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Assistant de paris CS2 en direct : lit la page de match HLTV ouverte et calcule les probabilités en temps réel.",
   "minimum_chrome_version": "116",
   "permissions": ["sidePanel", "storage", "unlimitedStorage"],

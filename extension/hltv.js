@@ -253,7 +253,8 @@ export function pagePrior(meta = {}, mapName, bestOf = 1) {
   if (ms) {
     const a = shrunk(ms.w1, ms.n1), b = shrunk(ms.w2, ms.n2);
     if (a !== 0 || b !== 0) {
-      xMap += 0.5 * (a - b);
+      // Poids recalé sur les journaux (31 maps) : 0,5 → 0,75.
+      xMap += 0.75 * (a - b);
       sources.push(`${normalizeMap(mapName)} sur 3 mois : ${ms.w1 != null ? Math.round(ms.w1 * 100) + ' %' : '—'} (${ms.n1 || 0} maps) contre ${ms.w2 != null ? Math.round(ms.w2 * 100) + ' %' : '—'} (${ms.n2 || 0} maps)`);
     }
   }
@@ -320,6 +321,14 @@ export function toMatch(sb, meta = {}, mem = {}) {
 
   // Historique : vainqueur et côté de chaque round.
   const winners = winnersByRound(sb, ctA ? 'A' : 'B', ctA ? 'B' : 'A');
+  // Historique HLTV parfois incomplet : on complète avec les changements de score observés
+  // en direct (score 5-2 → 6-2 : A a gagné le round 8).
+  if (mem.winners) {
+    const prev = mem.lastScore;
+    if (prev && played === prev.a + prev.b + 1) mem.winners[played] = scoreA > prev.a ? 'A' : 'B';
+    mem.lastScore = { a: scoreA, b: scoreB };
+    for (const [r, w] of Object.entries(mem.winners)) if (!winners.has(+r) && +r <= played) winners.set(+r, w);
+  }
   let rounds = [];
   let complete = true;
   for (let r = 1; r <= played; r++) {

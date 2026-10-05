@@ -299,3 +299,14 @@ test('diagnostic réel (Vitality-NaVi, Anubis 4-0) : cohérent avec HLTV (87 %)'
   const res = analyze(m);
   assert.ok(Math.abs(res.pMap - 0.874) < 0.06, `map ${res.pMap} vs HLTV 0.874`);
 });
+
+test('historique HLTV incomplet : complété par les changements de score observés', () => {
+  const mem = { econ: {}, winners: {} };
+  const noHist = { ...SB, ctMatchHistory: { firstHalf: [], secondHalf: [] }, terroristMatchHistory: { firstHalf: [], secondHalf: [] } };
+  // On suit le match depuis 0-0 : chaque changement de score donne le vainqueur du round.
+  const seq = [[0, 0], [1, 0], [1, 1], [2, 1], [3, 1], [3, 2]];
+  let m;
+  for (const [ct, t] of seq) m = toMatch({ ...noHist, counterTerroristScore: ct, terroristScore: t, currentRound: ct + t + 1 }, META, mem);
+  assert.equal(m.rounds.map((r) => r.winner).join(''), 'ABAAB');
+  assert.ok(m.rounds.every((r) => !r.synthetic && r.aSide === 'CT'));
+});

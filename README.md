@@ -51,7 +51,7 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 | Cotes des bookmakers (si affichées) | Source principale de la force des équipes (marge retirée) |
 | Points VRS (sinon classement HLTV) | Force des équipes quand il n'y a pas de cotes (HLTV masque les cotes en France) |
 | Rating moyen des joueurs sur 3 mois | Ajustement léger |
-| Taux de victoire sur la map jouée (3 mois) | Ajustement spécifique à la map, pondéré par le nombre de maps jouées |
+| Taux de victoire sur la map jouée (3 mois) | Ajustement spécifique à la map, pondéré par le nombre de maps jouées (la donnée d'avant-match la plus utile sur les matchs enregistrés) |
 | Maps déjà jouées dans la série, **mi-temps par mi-temps** | Preuve directe de l'écart entre les équipes (avec le côté CT/T de chaque moitié) |
 | Format BO1/BO3/BO5, maps gagnées | Probabilité de gagner la série |
 
@@ -111,6 +111,12 @@ Les paramètres du modèle (`CAL` dans `extension/engine.js`) sont vérifiés su
 - Avec la version 2.6, les débuts de round passent à un score de Brier de 0,218 (0,246 avant), et sur la map ProBet fait nettement mieux que la probabilité live de HLTV (0,162 contre 0,209 aux mêmes moments).
 - *Prévisions entre les rounds tempérées.* Les tendances « vainqueur du round » proposées pendant la pause ou l'achat reposaient sur l'économie *prévue* : 72 % annoncés, 63 % observés, alors qu'au début du round (achats connus) la probabilité était juste. Tant que les achats ne sont pas connus, la probabilité du round est maintenant tempérée (`CAL.preBuy` = 0,55 sur l'échelle logit).
 - Marchés de la map (vainqueur, handicaps, totaux, prolongation) : bien calibrés à tous les moments enregistrés ; les paris perdus se concentrent sur quelques maps à grosse remontée (8-2 → 8-13), où plusieurs paris sur la même équipe perdent ensemble.
+
+**Troisième recalage (journal propre en version 2.7 : 14 maps, puis 31 maps cumulées) :**
+
+- Version 2.7 : ProBet 0,149 contre HLTV 0,175 sur la map ; tendances gagnées 72 % pour 74 % annoncés ; débuts de round et moments en cours de round bien calibrés (aucune correction nécessaire).
+- *Avant-match* : sur 31 maps, l'estimation fait mieux que chaque source seule. Le taux de victoire de chaque équipe sur la map jouée (3 mois) est la donnée la plus utile : son poids passe de 0,5 à 0,75 (Brier 0,223 → 0,218), valeur vérifiée sur deux moitiés indépendantes des matchs.
+- *Historique des rounds incomplet* : sur une map, HLTV n'envoyait plus l'historique des rounds ; ProBet perdait alors le côté de chaque round. Il complète désormais l'historique avec les changements de score observés en direct.
 
 Le modèle tient compte du fait que les rounds s'enchaînent par séries : le vainqueur d'un round garde l'avantage économique au suivant. Sans cela, une avance au score paraîtrait plus définitive qu'elle ne l'est.
 

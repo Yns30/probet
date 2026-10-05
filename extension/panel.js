@@ -363,7 +363,7 @@ function process(id, src) {
   // Nouvelle map : on repart d'un historique vierge. (Clé = nom de la map : le numéro de map
   // dans la série change quand HLTV met à jour les résultats.)
   const key = String(src.scoreboard.mapName || '');
-  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; }
+  if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; mem.winners = {}; mem.lastScore = null; }
   const m = toMatch(src.scoreboard, meta, mem);
   const res = analyze(m);
 

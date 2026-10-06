@@ -70,16 +70,27 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
 4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble.
 
-### Cotes automatiques (sans rien taper)
+### Cotes Stake 100 % automatiques
 
-ProBet lit aussi les cotes sur la page de **votre bookmaker**, ouverte dans un autre onglet, de la même façon qu'il lit HLTV : aucune requête, aucun proxy, n'importe quel bookmaker.
+Avec **Stake**, il n'y a rien à faire : ouvrez la page du match sur Stake dans un autre onglet, c'est tout.
+
+- ProBet reconnaît le match tout seul grâce aux noms des équipes (« Falcons » = « Team Falcons », « NAVI » = « Natus Vincere »…) et sait quelle équipe est à domicile chez Stake.
+- Il remplit automatiquement les cotes de la **map en cours** : vainqueur de la map, handicap de rounds, total de rounds plus/moins, prolongation, round pistol, et vainqueur du match.
+- Les cotes se mettent à jour en direct, avec le conseil (À JOUER / PAS DE PARI, avantage, mise). La ligne « ● Cotes stake.com en direct » sous « Que jouer ? » confirme la connexion.
+- Si Stake suspend un marché, ProBet affiche « suspendu » et ne s'en sert pas. Si l'onglet Stake est fermé, les cotes disparaissent.
+
+Comment ça marche : ProBet lit les données que la page Stake reçoit déjà pour s'afficher (la liste des marchés intégrée à la page, puis le flux de mises à jour du site et les cotes affichées). Aucune requête supplémentaire n'est envoyée à Stake, rien n'est cliqué ni ajouté au coupon. Domaines pris en charge : stake.com et ses miroirs (stake.bet, stake.ac, stake.games…).
+
+### Autres bookmakers (liaison en un clic)
+
+Pour un autre bookmaker, ProBet lit les cotes sur sa page ouverte dans un autre onglet, de la même façon qu'il lit HLTV.
 
 1. Ouvrez la page du match chez votre bookmaker (Betclic, Winamax, Unibet…).
 2. Dans ProBet, cliquez sur 🔗 à côté d'une ligne (ou dans « Tous les marchés »). La première fois, Chrome demande l'autorisation de lire les pages des sites : acceptez.
-3. Dans l'onglet du bookmaker, un cadre vert suit la souris : cliquez sur la cote correspondante. **Ce clic n'ajoute rien à votre coupon.** Pour un marché à deux issues (vainqueur, total plus/moins, prolongation), l'autre cote est liée en même temps ; si vous cliquez sur l'équipe d'en face, ProBet remet les cotes dans le bon sens.
-4. C'est fait : la cote s'affiche en vert dans ProBet, se met à jour chaque seconde, et le conseil (À JOUER / PAS DE PARI, avantage, mise) suit en direct. Le lien survit au rechargement de la page ; ✕ le supprime.
+3. Dans l'onglet du bookmaker, un cadre vert suit la souris : cliquez sur la cote correspondante. **Ce clic n'ajoute rien à votre coupon.** Pour un marché à deux issues, l'autre cote est liée en même temps.
+4. La cote s'affiche en vert dans ProBet et se met à jour chaque seconde. Le lien survit au rechargement de la page ; ✕ le supprime.
 
-Si la cote disparaît (marché suspendu, page fermée), ProBet affiche « cote indisponible » et ne s'en sert plus. Les liaisons sont propres à chaque match.
+Une cote liée à la main est prioritaire sur la cote Stake automatique.
 
 Les conseils sont choisis entre les rounds et figés pendant le round (mention « conseils figés pendant le round ») ; une cote que vous saisissez est évaluée tout de suite.
 
@@ -151,6 +162,7 @@ Le modèle tient compte du fait que les rounds s'enchaînent par séries : le va
 ## Limites
 
 - HLTV a lui aussi quelques secondes de retard sur le match réel, et les cotes live bougent vite. Vérifiez le score chez votre bookmaker avant de valider un pari.
+- Les cotes Stake affichées dans ProBet peuvent avoir une ou deux secondes de retard : la cote qui compte est celle du coupon Stake au moment de valider.
 - Le modèle est **statistique** : il estime des probabilités, il ne garantit rien. L'avantage n'existe que si la cote du bookmaker est nettement au-dessus de la cote juste.
 - Les paris « vainqueur de la map » et « handicap » sur la même équipe gagnent ou perdent presque toujours ensemble : en jouer plusieurs sur une même map revient à miser plus gros sur un seul scénario.
 - Ne jouez que ce que vous pouvez perdre. Réservé aux 18 ans et plus.
@@ -167,6 +179,9 @@ extension/
   picks.js        stabilisation des paris affichés (figés pendant le round, hystérésis)
   advice.js       tableau « Que jouer ? » : une ligne par marché, statut et cote minimale
   odds.js         lecture des cotes sur la page du bookmaker (liaison par clic, suivi en direct)
+  stake.js        cotes Stake automatiques (données de la page, flux en direct, cotes affichées)
+  stake-relay.js  relais Stake → panneau
+  books.js        match Stake ↔ match HLTV (noms d'équipes) et marchés Stake → marchés ProBet
   journal.js      journal des matchs : prévisions, résultats, paris réglés, bilan
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)

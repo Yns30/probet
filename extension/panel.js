@@ -1,6 +1,7 @@
 import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
+import { findFixture, bookOdds } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
@@ -114,6 +115,38 @@ function expireLive(mem) {
     if (Date.now() - l.at > LIVE_TTL && mem.odds[id] === l.odds) { delete mem.odds[id]; l.odds = null; }
   }
 }
+
+// ---------- Cotes automatiques (Stake) ----------
+// stake.js lit la page Stake ouverte et envoie le match chaque seconde : le match HLTV
+// correspondant est retrouvé par les noms d'équipes et ses cotes remplies sans aucun clic.
+const AUTO_TTL = 90000; // cote plus confirmée depuis 90 s (marché masqué, flux coupé) : pas utilisée
+const books = new Map(); // tabId → { host, fixture, at }
+function onBook(msg, tabId) {
+  if (tabId == null || !msg.fixture) return;
+  books.set(tabId, { host: msg.host, fixture: msg.fixture, at: Date.now() });
+  scheduleRender();
+}
+// Remplit mem.live / mem.odds avec les cotes du bookmaker pour la map en cours.
+function applyBooks(mem, names, mapNumber, matchId) {
+  const now = Date.now();
+  const live = [...books.values()].filter((b) => now - b.at < LIVE_TTL);
+  const hit = findFixture(live.map((b) => b.fixture), names);
+  const book = hit && live.find((b) => b.fixture === hit.fixture);
+  mem.live ??= {};
+  const got = hit ? bookOdds(hit.fixture, hit.homeSide, mapNumber ?? hit.fixture.mapNumber) : {};
+  for (const [id, l] of Object.entries(mem.live)) {
+    if (l.auto && !got[id]) { delete mem.live[id]; if (mem.odds[id] === l.odds) delete mem.odds[id]; }
+  }
+  for (const [id, o] of Object.entries(got)) {
+    if (linkOf(String(matchId), id)) continue; // cote liée à la main : prioritaire
+    const odds = o.odds > 1 && now - o.at < AUTO_TTL ? o.odds : null;
+    const prev = mem.live[id];
+    mem.live[id] = { odds, host: book.host, at: now, auto: true };
+    if (odds) mem.odds[id] = odds; else if (prev?.auto && mem.odds[id] === prev.odds) delete mem.odds[id];
+  }
+  mem.book = hit ? { host: book.host, name: hit.fixture.name } : null;
+}
+
 let renderTimer = null;
 function scheduleRender() { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = null; render(); }, 150); }
 
@@ -244,8 +277,10 @@ if (hasChrome) {
     else if (msg?.type === 'probet:odds') onLiveOdds(msg);
     else if (msg?.type === 'probet:picked') onPicked(msg, sender.tab?.id);
     else if (msg?.type === 'probet:pick-cancel') endPicking('Liaison annulée.');
+    else if (msg?.type === 'probet:book') onBook(msg, sender.tab?.id);
   });
   chrome.tabs.onRemoved.addListener((id) => {
+    if (books.delete(id)) scheduleRender();
     if (sources.delete(id)) { refreshSelect(); render(); }
   });
 }
@@ -429,8 +464,8 @@ function oddsCell(id, label, mem) {
   if (linked || live) {
     const fresh = live && live.odds > 1 && Date.now() - live.at < LIVE_TTL;
     return `<span class="live-odds${fresh ? '' : ' off'}" title="Cote lue en direct sur ${esc(live?.host || linked?.host || '')}">
-      ${fresh ? `<b>${dec(live.odds)}</b> <small>${esc(live.host)}</small>` : '<small>cote indisponible</small>'}
-      <button type="button" class="unlink" data-unlink="${esc(id)}" aria-label="Délier">✕</button></span>`;
+      ${fresh ? `<b>${dec(live.odds)}</b> <small>${esc(live.host)}</small>` : `<small>${live?.auto ? 'suspendu' : 'cote indisponible'}</small>`}
+      ${live?.auto && !linked ? '' : `<button type="button" class="unlink" data-unlink="${esc(id)}" aria-label="Délier">✕</button>`}</span>`;
   }
   const o = mem.odds[id];
   return `<input data-mid="${esc(id)}" inputmode="decimal" value="${o ? dec(o) : ''}" placeholder="—" aria-label="Cote">
@@ -463,6 +498,10 @@ function renderAdvice(picks, list, conf, mem) {
   mem.advice ??= {};
   const rows = buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 });
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
+  $('bookState').innerHTML = mem.book
+    ? `<span class="ok">● Cotes ${esc(mem.book.host)} en direct</span> · ${esc(mem.book.name)}`
+    : books.size ? 'Page Stake ouverte, mais pas sur ce match : ouvrez ce match sur Stake.'
+      : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.';
   setHTML($('advice'), rows.map((r) => {
     const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
@@ -533,6 +572,7 @@ function process(id, src) {
   if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; mem.winners = {}; mem.lastScore = null; }
   expireLive(mem);
   const m = toMatch(src.scoreboard, meta, mem);
+  applyBooks(mem, m.names, m.mapNumber, src.matchId);
   const res = analyze(m);
 
   const pMap = res.over ? (res.over === 'A' ? 1 : 0) : res.pMap;

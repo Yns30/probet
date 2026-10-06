@@ -1,29 +1,97 @@
 {
   "manifest_version": 3,
   "name": "ProBet CS2",
-  "version": "3.0.0",
-  "description": "Assistant de paris CS2 en direct : lit la page de match HLTV ouverte et calcule les probabilités en temps réel.",
+  "version": "3.1.0",
+  "description": "Assistant de paris CS2 en direct : lit la page de match HLTV ouverte, calcule les probabilités en temps réel et récupère les cotes Stake automatiquement.",
   "minimum_chrome_version": "116",
-  "permissions": ["sidePanel", "storage", "unlimitedStorage", "scripting"],
-  "optional_host_permissions": ["https://*/*"],
-  "host_permissions": ["https://www.hltv.org/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Ouvrir ProBet" },
-  "side_panel": { "default_path": "panel.html" },
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ],
+  "host_permissions": [
+    "https://www.hltv.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Ouvrir ProBet"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.hltv.org/matches/*"],
-      "js": ["hook.js"],
+      "matches": [
+        "https://www.hltv.org/matches/*"
+      ],
+      "js": [
+        "hook.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": ["https://www.hltv.org/matches/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://www.hltv.org/matches/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://stake.com/*",
+        "https://stake.bet/*",
+        "https://stake.ac/*",
+        "https://stake.games/*",
+        "https://stake.pet/*",
+        "https://stake.mba/*",
+        "https://stake.jp/*",
+        "https://stake.bz/*",
+        "https://stake.ceo/*",
+        "https://stake.krd/*"
+      ],
+      "js": [
+        "stake.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://stake.com/*",
+        "https://stake.bet/*",
+        "https://stake.ac/*",
+        "https://stake.games/*",
+        "https://stake.pet/*",
+        "https://stake.mba/*",
+        "https://stake.jp/*",
+        "https://stake.bz/*",
+        "https://stake.ceo/*",
+        "https://stake.krd/*"
+      ],
+      "js": [
+        "stake-relay.js"
+      ],
       "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["hltv.js", "engine.js"], "matches": ["https://www.hltv.org/*"] }
+    {
+      "resources": [
+        "hltv.js",
+        "engine.js"
+      ],
+      "matches": [
+        "https://www.hltv.org/*"
+      ]
+    }
   ]
 }

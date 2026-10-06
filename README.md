@@ -10,7 +10,7 @@ Page de match HLTV ouverte ──► données live reçues par la page (scorebot
                          moteur de probabilités ──► panneau ProBet (à côté de la page)
 ```
 
-- **Gratuit, sans compte, sans API, sans proxy.** ProBet n'envoie aucune requête à HLTV : il écoute les données que la page ouverte reçoit déjà pour afficher son scoreboard live.
+- **Gratuit, sans compte, sans API, sans proxy.** ProBet n'envoie aucune requête à HLTV : il écoute les données que la page ouverte reçoit déjà pour afficher son scoreboard live. Les cotes sont lues de la même façon sur la page de votre bookmaker.
 - **Plusieurs matchs à la fois :** ouvrez une page HLTV par match (dans des onglets ou des fenêtres). Tous les matchs sont analysés et enregistrés dans le journal en parallèle ; le menu en haut du panneau choisit celui qui est affiché. Les onglets peuvent rester en arrière-plan, mais ne les fermez pas et ne mettez pas Chrome en veille.
 
 ## Installation (2 minutes)
@@ -69,6 +69,17 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 2. Comparez sa cote à la **cote minimale** de ProBet : au-dessus, le pari est rentable à long terme ; en dessous, passez.
 3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
 4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble.
+
+### Cotes automatiques (sans rien taper)
+
+ProBet lit aussi les cotes sur la page de **votre bookmaker**, ouverte dans un autre onglet, de la même façon qu'il lit HLTV : aucune requête, aucun proxy, n'importe quel bookmaker.
+
+1. Ouvrez la page du match chez votre bookmaker (Betclic, Winamax, Unibet…).
+2. Dans ProBet, cliquez sur 🔗 à côté d'une ligne (ou dans « Tous les marchés »). La première fois, Chrome demande l'autorisation de lire les pages des sites : acceptez.
+3. Dans l'onglet du bookmaker, un cadre vert suit la souris : cliquez sur la cote correspondante. **Ce clic n'ajoute rien à votre coupon.** Pour un marché à deux issues (vainqueur, total plus/moins, prolongation), l'autre cote est liée en même temps ; si vous cliquez sur l'équipe d'en face, ProBet remet les cotes dans le bon sens.
+4. C'est fait : la cote s'affiche en vert dans ProBet, se met à jour chaque seconde, et le conseil (À JOUER / PAS DE PARI, avantage, mise) suit en direct. Le lien survit au rechargement de la page ; ✕ le supprime.
+
+Si la cote disparaît (marché suspendu, page fermée), ProBet affiche « cote indisponible » et ne s'en sert plus. Les liaisons sont propres à chaque match.
 
 Les conseils sont choisis entre les rounds et figés pendant le round (mention « conseils figés pendant le round ») ; une cote que vous saisissez est évaluée tout de suite.
 
@@ -155,6 +166,7 @@ extension/
   engine.js       moteur de probabilités (round, map, totaux, handicaps, série, value)
   picks.js        stabilisation des paris affichés (figés pendant le round, hystérésis)
   advice.js       tableau « Que jouer ? » : une ligne par marché, statut et cote minimale
+  odds.js         lecture des cotes sur la page du bookmaker (liaison par clic, suivi en direct)
   journal.js      journal des matchs : prévisions, résultats, paris réglés, bilan
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)

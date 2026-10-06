@@ -73,6 +73,133 @@ setInterval(saveJournal, 10000);
 addEventListener('visibilitychange', saveJournal);
 addEventListener('pagehide', saveJournal);
 
+// ---------- Cotes en direct depuis l'onglet du bookmaker ----------
+// L'utilisateur lie une fois chaque cote (🔗 puis clic sur la cote dans la page du
+// bookmaker) ; le script odds.js la relit ensuite chaque seconde et l'envoie ici.
+
+const LIVE_TTL = 12000; // au-delà, une cote non rafraîchie n'est plus utilisée
+let oddsLinks = [];
+let pickingTabs = [];
+async function loadLinks() {
+  try { oddsLinks = (hasChrome && (await chrome.storage.local.get('oddsLinks')).oddsLinks) || []; } catch { oddsLinks = []; }
+  // Liaisons des matchs terminés (plus de 3 jours) : supprimées.
+  const fresh = oddsLinks.filter((l) => !l.at || Date.now() - l.at < 3 * 86400e3);
+  if (fresh.length !== oddsLinks.length) { oddsLinks = fresh; saveLinks(); }
+}
+async function saveLinks() {
+  if (!hasChrome) return;
+  await chrome.storage.local.set({ oddsLinks });
+  // Le script de lecture se réinstalle tout seul sur les sites liés (rechargement, redémarrage).
+  const origins = [...new Set(oddsLinks.map((l) => l.origin))];
+  try {
+    const reg = await chrome.scripting.getRegisteredContentScripts({ ids: ['probet-odds'] });
+    if (!origins.length) { if (reg.length) await chrome.scripting.unregisterContentScripts({ ids: ['probet-odds'] }); return; }
+    const def = { id: 'probet-odds', matches: origins.map((o) => `${o}/*`), js: ['odds.js'], runAt: 'document_idle', persistAcrossSessions: true };
+    if (reg.length) await chrome.scripting.updateContentScripts([def]); else await chrome.scripting.registerContentScripts([def]);
+  } catch { /* permission retirée : la liaison sera redemandée */ }
+}
+const linkOf = (matchId, marketId) => oddsLinks.find((l) => l.matchId === matchId && l.marketId === marketId);
+
+function onLiveOdds(msg) {
+  const mem = memFor(msg.matchId);
+  mem.live ??= {};
+  mem.live[msg.marketId] = { odds: msg.odds, host: msg.host, at: Date.now() };
+  if (msg.odds > 1) mem.odds[msg.marketId] = msg.odds; else delete mem.odds[msg.marketId];
+  const src = sources.get(selected);
+  if (src && String(src.matchId) === String(msg.matchId)) scheduleRender();
+}
+// Cote liée mais plus rafraîchie (onglet fermé, marché disparu) : on ne s'en sert plus.
+function expireLive(mem) {
+  for (const [id, l] of Object.entries(mem.live || {})) {
+    if (Date.now() - l.at > LIVE_TTL && mem.odds[id] === l.odds) { delete mem.odds[id]; l.odds = null; }
+  }
+}
+let renderTimer = null;
+function scheduleRender() { if (!renderTimer) renderTimer = setTimeout(() => { renderTimer = null; render(); }, 150); }
+
+function linkMsg(text) {
+  $('linkBar').hidden = !text;
+  $('linkBar').querySelector('span').textContent = text || '';
+}
+async function startLinking(marketId, label) {
+  const src = sources.get(selected);
+  if (!hasChrome || !src?.matchId) return;
+  // Autorisation de lire les autres sites (demandée une seule fois par Chrome).
+  const origins = { origins: ['https://*/*'] };
+  const ok = (await chrome.permissions.contains(origins).catch(() => false)) || (await chrome.permissions.request(origins).catch(() => false));
+  if (!ok) { linkMsg('Autorisation refusée : ProBet ne peut pas lire la page du bookmaker.'); return; }
+  const tabs = (await chrome.tabs.query({})).filter((t) => /^https:/.test(t.url || '') && !/hltv\.org/.test(t.url));
+  if (!tabs.length) { linkMsg('Ouvrez d’abord la page du match chez votre bookmaker, puis recliquez sur 🔗.'); return; }
+  pickingTabs = [];
+  for (const t of tabs) {
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['odds.js'] });
+      await chrome.tabs.sendMessage(t.id, { type: 'probet:pick', matchId: String(src.matchId), marketId, label });
+      pickingTabs.push(t.id);
+    } catch { /* page non accessible (Web Store, PDF…) */ }
+  }
+  linkMsg(pickingTabs.length ? `Allez dans l’onglet du bookmaker et cliquez sur la cote « ${label} ».` : 'Impossible de lire les onglets ouverts.');
+}
+function endPicking(text) {
+  for (const id of pickingTabs) chrome.tabs.sendMessage(id, { type: 'probet:pick-stop' }).catch(() => {});
+  pickingTabs = [];
+  linkMsg(text);
+  if (text) setTimeout(() => { if ($('linkBar').querySelector('span').textContent === text) linkMsg(''); }, 5000);
+}
+// Cote cliquée sur la mauvaise équipe (ex. G2 au lieu de 1win) : le nom lu chez le bookmaker
+// est comparé aux noms HLTV et les deux cotes du marché sont remises dans le bon sens.
+const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+function fixTeamSides(links, names) {
+  const team = (sel) => {
+    const t = normName(sel);
+    const hit = names.map((n) => normName(n)).map((n) => Boolean(n) && (t.includes(n) || (t.length >= 3 && n.includes(t))));
+    return hit[0] && !hit[1] ? 'A' : hit[1] && !hit[0] ? 'B' : null;
+  };
+  return links.map((l) => {
+    const m = /^(round\d+|map|series):(A|B)$/.exec(l.marketId);
+    const side = m && team(l.locator?.sel);
+    return side && side !== m[2] ? { ...l, marketId: `${m[1]}:${side}` } : l;
+  });
+}
+async function onPicked(msg, tabId) {
+  const src = [...sources.values()].find((x) => String(x.matchId) === String(msg.links[0]?.matchId));
+  const names = [src?.meta?.team1?.name, src?.meta?.team2?.name];
+  msg.links = fixTeamSides(msg.links, names);
+  for (const l of msg.links) {
+    oddsLinks = oddsLinks.filter((x) => !(x.matchId === l.matchId && x.marketId === l.marketId));
+    oddsLinks.push({ matchId: l.matchId, marketId: l.marketId, origin: msg.origin, path: msg.path, host: msg.host, locator: l.locator, at: Date.now() });
+    onLiveOdds({ matchId: l.matchId, marketId: l.marketId, odds: l.odds, host: msg.host });
+  }
+  pickingTabs = pickingTabs.filter((id) => id !== tabId);
+  await saveLinks();
+  endPicking(`Cote liée ✓ (${msg.host}${msg.links.length > 1 ? ', les deux issues du marché' : ''}) : elle se met à jour toute seule.`);
+}
+async function unlink(marketId) {
+  const src = sources.get(selected);
+  if (!src) return;
+  const mem = memFor(src.matchId || selected);
+  const opp = { A: 'B', B: 'A', Y: 'N', N: 'Y', O: 'U', U: 'O' };
+  const [base, side] = marketId.split(':');
+  const ids = [marketId, `${base}:${opp[side]}`];
+  oddsLinks = oddsLinks.filter((l) => !(l.matchId === String(src.matchId) && ids.includes(l.marketId)));
+  for (const id of ids) { delete mem.odds[id]; delete mem.live?.[id]; }
+  await saveLinks();
+  render();
+}
+// Le tableau se redessine souvent pendant un round : on réagit dès l'appui (pointerdown),
+// sinon le bouton peut être remplacé entre l'appui et le relâchement et le clic se perd.
+let lastLinkPress = 0;
+function onLinkClick(e) {
+  const b = e.target.closest('button[data-link], button[data-unlink]');
+  if (!b) return;
+  if (e.type === 'click' && Date.now() - lastLinkPress < 800) return; // déjà traité à l'appui
+  if (e.type === 'pointerdown') lastLinkPress = Date.now();
+  if (b.dataset.unlink) unlink(b.dataset.unlink);
+  else startLinking(b.dataset.link, b.dataset.label);
+}
+// Ne remplace le contenu que s'il a changé (garde les boutons et le focus en place).
+function setHTML(el, html) { if (el.__html !== html) { el.innerHTML = html; el.__html = html; } }
+
 // ---------- Sources (onglets HLTV ouverts, ou démo) ----------
 
 const sources = new Map(); // id → état envoyé par la page
@@ -114,6 +241,9 @@ function onState(id, state) {
 if (hasChrome) {
   chrome.runtime.onMessage.addListener((msg, sender) => {
     if (msg?.type === 'probet:state' && sender.tab) onState(sender.tab.id, msg.state);
+    else if (msg?.type === 'probet:odds') onLiveOdds(msg);
+    else if (msg?.type === 'probet:picked') onPicked(msg, sender.tab?.id);
+    else if (msg?.type === 'probet:pick-cancel') endPicking('Liaison annulée.');
   });
   chrome.tabs.onRemoved.addListener((id) => {
     if (sources.delete(id)) { refreshSelect(); render(); }
@@ -291,6 +421,22 @@ function facts(m, res, src) {
   return out.slice(0, 5);
 }
 
+// Case cote : cote du bookmaker en direct si liée, sinon saisie manuelle + bouton 🔗.
+function oddsCell(id, label, mem) {
+  const live = mem.live?.[id];
+  const src = sources.get(selected);
+  const linked = src && linkOf(String(src.matchId), id);
+  if (linked || live) {
+    const fresh = live && live.odds > 1 && Date.now() - live.at < LIVE_TTL;
+    return `<span class="live-odds${fresh ? '' : ' off'}" title="Cote lue en direct sur ${esc(live?.host || linked?.host || '')}">
+      ${fresh ? `<b>${dec(live.odds)}</b> <small>${esc(live.host)}</small>` : '<small>cote indisponible</small>'}
+      <button type="button" class="unlink" data-unlink="${esc(id)}" aria-label="Délier">✕</button></span>`;
+  }
+  const o = mem.odds[id];
+  return `<input data-mid="${esc(id)}" inputmode="decimal" value="${o ? dec(o) : ''}" placeholder="—" aria-label="Cote">
+    <button type="button" class="link" data-link="${esc(id)}" data-label="${esc(label)}" title="Lier à la cote de mon bookmaker">🔗</button>`;
+}
+
 const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI' };
 
 function adviceText(r) {
@@ -313,11 +459,11 @@ function adviceText(r) {
 
 function renderAdvice(picks, list, conf, mem) {
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
-  if ($('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
+  if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
   mem.advice ??= {};
   const rows = buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 });
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
-  $('advice').innerHTML = rows.map((r) => {
+  setHTML($('advice'), rows.map((r) => {
     const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
       ? `<div class="adv-note">Maintenant ${pct(r.now)} : le conseil est figé jusqu'à la fin du round</div>` : '';
@@ -325,20 +471,20 @@ function renderAdvice(picks, list, conf, mem) {
       <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
       ${r.id ? `<div class="adv-line"><span class="adv-sel">${esc(r.sel)}</span><span class="adv-p">${pct(r.p)}</span></div>` : ''}
       <div class="adv-how">${adviceText(r)}</div>${frozen}
-      ${r.id ? `<label class="adv-odds">Cote <input data-mid="${esc(r.id)}" inputmode="decimal" value="${r.odds ? dec(r.odds) : ''}" placeholder="—"></label>` : ''}
+      ${r.id ? `<div class="adv-odds">${oddsCell(r.id, `${r.sel} — ${r.label}`, mem)}</div>` : ''}
     </li>`;
-  }).join('');
+  }).join(''));
 }
 
 function renderMarkets(list, mem) {
   if (document.activeElement?.dataset?.mid) return; // saisie en cours
-  $('marketRows').innerHTML = list.map((mk) => {
+  setHTML($('marketRows'), list.map((mk) => {
     const o = mem.odds[mk.id];
     const ev = evaluateBet(mk.p, o);
     return `<tr><td>${esc(mk.label)}<small>${esc(mk.group)}</small></td><td>${pct(mk.p)}</td><td>${dec(1 / mk.p)}</td>
-      <td><input data-mid="${esc(mk.id)}" inputmode="decimal" value="${o ? dec(o) : ''}" placeholder="—"></td>
+      <td class="oc">${oddsCell(mk.id, `${mk.label} — ${mk.group}`, mem)}</td>
       <td class="${ev ? (ev.ev > 0 ? 'pos' : 'neg') : ''}">${ev ? `${ev.ev > 0 ? '+' : ''}${dec(ev.ev * 100, 1)}%` : ''}</td></tr>`;
-  }).join('');
+  }).join(''));
 }
 function onOddsInput(e) {
   const id = e.target.dataset.mid;
@@ -352,6 +498,8 @@ function onOddsInput(e) {
 }
 $('marketRows').addEventListener('change', onOddsInput);
 $('advice').addEventListener('change', onOddsInput);
+for (const el of [$('marketRows'), $('advice')]) for (const t of ['pointerdown', 'click']) el.addEventListener(t, onLinkClick);
+$('linkCancel').addEventListener('click', () => endPicking(''));
 
 function renderPre(m, src) {
   const [A, B] = m.names;
@@ -383,6 +531,7 @@ function process(id, src) {
   // dans la série change quand HLTV met à jour les résultats.)
   const key = String(src.scoreboard.mapName || '');
   if (mem.mapKey !== key) { mem.mapKey = key; mem.history = []; mem.econ = {}; mem.picks = {}; mem.winners = {}; mem.lastScore = null; }
+  expireLive(mem);
   const m = toMatch(src.scoreboard, meta, mem);
   const res = analyze(m);
 
@@ -507,6 +656,7 @@ $('btnClearJournal').addEventListener('click', () => {
 // ---------- Démarrage ----------
 
 await loadSettings();
+await loadLinks();
 await loadJournal();
 await discover();
 setInterval(() => {

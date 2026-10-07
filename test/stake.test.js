@@ -249,3 +249,17 @@ test('Stake ferme la map en cours et le match (cas réel Spirit - M80 à 12-6) :
   assert.equal(bookClosure(fx, 1).closed, false);
   assert.equal(bookClosure({ markets: [] }, 1).closed, false);
 });
+
+test('heure du dernier vrai changement de cote (cote pas encore recalculée après un round)', () => {
+  const model = load(1000);
+  const mk = [...model.markets.values()].find((m) => m.outcomes.length && m.status === 'active');
+  const o = mk.outcomes[0];
+  const first = o.chg;
+  applyPayload(model, { id: o.id, odds: o.odds, active: true }, SLUG, 5000);
+  assert.equal(o.chg, first, 'même cote relue : pas un changement');
+  assert.equal(o.seen, 5000);
+  applyPayload(model, { id: o.id, odds: o.odds + 0.1, active: true }, SLUG, 7000);
+  assert.equal(o.chg, 7000);
+  const snap = snapshot(model, 8000).markets.find((m) => m.outcomes.some((x) => x.chg === 7000));
+  assert.ok(snap);
+});

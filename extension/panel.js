@@ -1,6 +1,6 @@
 import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
-import { buildAdvice } from './advice.js';
+import { buildAdvice, CATEGORIES } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
@@ -179,7 +179,7 @@ function applyBooks(mem, m, matchId) {
     if (linkOf(String(matchId), id)) continue; // cote liée à la main : prioritaire
     const odds = o.odds > 1 && now - o.at < AUTO_TTL ? o.odds : null;
     const prev = mem.live[id];
-    mem.live[id] = { odds, host: book.host, at: now, auto: true };
+    mem.live[id] = { odds, host: book.host, at: now, auto: true, chg: o.chg };
     if (odds) mem.odds[id] = odds; else if (prev?.auto && mem.odds[id] === prev.odds) delete mem.odds[id];
   }
   // Lignes proposées par le bookmaker : ProBet calcule exactement celles-là.
@@ -526,7 +526,7 @@ function oddsCell(id, label, mem) {
 }
 
 const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI',
-  suspended: 'ATTENDRE', nobook: 'PAS SUR STAKE', suspect: 'À VÉRIFIER' };
+  suspended: 'ATTENDRE', stale: 'ATTENDRE', nobook: 'PAS SUR STAKE', suspect: 'À VÉRIFIER' };
 
 // Stake connecté : un pari n'est conseillé que s'il est réellement ouvert chez Stake.
 function bookStatus(rows, mem, matchId) {
@@ -537,6 +537,7 @@ function bookStatus(rows, mem, matchId) {
     if (!l?.auto && mem.book.desync && !r.id.startsWith('series')) return { ...r, status: 'suspended' };
     if (!l?.auto) return { ...r, status: 'nobook' };
     if (!(l.odds > 1)) return { ...r, status: 'suspended' };
+    if (isStale(l, mem)) return { ...r, status: 'stale', odds: l.odds };
     // Cote très loin du modèle : presque toujours un décalage (score, map) plutôt qu'une aubaine.
     const pm = r.pm ?? r.p;
     if (pm != null && Math.abs(1 / l.odds - pm) > 0.3) return { ...r, status: 'suspect' };
@@ -569,6 +570,8 @@ function adviceText(r) {
       return `Trop incertain : ne pariez pas sur ce marché pour l'instant`;
     case 'suspended':
       return `Marché suspendu chez Stake (round en cours) : jouez à sa réouverture si la cote atteint <b>${dec(r.min)}</b>`;
+    case 'stale':
+      return `Cote Stake ${dec(r.odds ?? 0)} pas encore mise à jour depuis la fin du round : jouez si la nouvelle cote atteint <b>${dec(r.min)}</b>`;
     case 'suspect':
       return `Cote Stake ${dec(r.odds ?? 0)} très éloignée du modèle (${pct(r.pm ?? r.p)}) : vérifiez que Stake et HLTV montrent le même score avant de jouer`;
     case 'nobook':
@@ -583,7 +586,7 @@ function renderAdvice(picks, list, conf, mem) {
   if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
   mem.advice ??= {};
   const src = sources.get(selected);
-  const rows = bookStatus(buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
+  const rows = bookStatus(buildAdvice(mem.advice, { list, picks, odds: mem.fresh ?? mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
   setHTML($('bookState'), (mem.book
     ? `<span class="ok">● Cotes ${esc(mem.book.host)}</span> · ${esc(mem.book.name)}${
@@ -666,6 +669,24 @@ function modelWeight() {
   return weightCache.w;
 }
 
+// Paris réellement conseillés : un seul par marché (comme le tableau « Que jouer ? »). Noter
+// toutes les lignes d'un même avis (map, 6 handicaps, 4 totaux…) compterait 10 fois le même pari.
+function shownPicks(picks) {
+  const out = [];
+  for (const cat of CATEGORIES) {
+    const inCat = picks.filter((p) => cat.test(p.id));
+    const p = inCat.find((x) => x.kind === 'value') ?? inCat[0];
+    if (p) out.push(p);
+  }
+  return out;
+}
+const isStale = (l, mem) => Boolean(l?.auto && l.chg && mem.roundEnd && l.chg < mem.roundEnd);
+function freshOdds(mem) {
+  const out = { ...mem.odds };
+  for (const [id, l] of Object.entries(mem.live || {})) if (isStale(l, mem)) delete out[id];
+  return out;
+}
+
 // Analyse d'un match (affiché ou non) : probabilités, paris, historique, journal.
 function process(id, src) {
   const mem = memFor(src.matchId || id);
@@ -686,21 +707,26 @@ function process(id, src) {
   if (!prev || Math.abs(prev.p - pMap) > 0.002 || prev.label !== lbl) mem.history.push({ p: pMap, label: lbl });
   if (mem.history.length > 500) mem.history.shift();
 
+  // Cotes Stake pas encore recalculées depuis la fin du dernier round : on ne s'en sert pas
+  // (le modèle, lui, connaît déjà le résultat du round : l'« avantage » serait illusoire).
+  mem.roundEnd = Math.max(0, ...(src.log || []).filter((l) => l.type === 'RoundEnd' && l.t).map((l) => l.t));
+  const odds = freshOdds(mem);
+  mem.fresh = odds;
   // Avis du modèle combiné aux cotes Stake (poids appris par le journal).
-  const list = blendMarket(markets(res, m.names, m, mem.bookLines), mem.odds, modelWeight());
+  const list = blendMarket(markets(res, m.names, m, mem.bookLines), odds, modelWeight());
   const conf = confidence(res, 0.95, m.rounds.length);
   mem.picks ??= {};
   const picks = stablePicks(mem.picks, {
-    list, odds: mem.odds, conf, minEdge: (settings.edge || 4) / 100, max: 99,
+    list, odds, conf, minEdge: (settings.edge || 4) / 100, max: 99,
     phase: m.phase, round: m.round, mapKey: mem.mapKey,
     action: m.phase === 'bomb_planted' || (m.phase === 'live' && (m.aliveA < 5 || m.aliveB < 5)),
   });
   if (src.matchId && src.matchId !== 'demo') {
     const jkey = mapKeyOf(src.matchId, m.map || key);
-    const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', mem.odds) : null;
+    const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
     backfill(journal, src.matchId, src.meta?.maps);
-    logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
+    logPicks(journal, jkey, shownPicks(picks), { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
   }
   return { mem, m, res, list, conf, picks };

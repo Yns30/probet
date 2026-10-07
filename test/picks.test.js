@@ -57,12 +57,22 @@ test('tendances figées pendant le round, mises à jour entre les rounds', () =>
   assert.deepEqual(out.map((p) => p.id), ['ot:Y']);
 });
 
-test('les paris VALUE restent en direct pendant le round', () => {
+test('paris VALUE choisis avant le round : gardés pendant le round, pas de nouveau pari en cours de round', () => {
   const st = {};
   const ctx = { mapKey: 'm', round: 3 };
-  stablePicks(st, { ...ctx, phase: 'freezetime', list: [mk('map:A', 0.5)] });
-  const out = stablePicks(st, { ...ctx, phase: 'live', odds: { 'map:A': 2.2 }, list: [mk('map:A', 0.55)] });
+  let out = stablePicks(st, { ...ctx, phase: 'freezetime', odds: { 'map:A': 2.2 }, list: [mk('map:A', 0.55)] });
   assert.equal(out[0].kind, 'value');
+  out = stablePicks(st, { ...ctx, phase: 'live', odds: { 'map:A': 2.2 }, list: [mk('map:A', 0.6)] });
+  assert.equal(out[0].kind, 'value');
+  assert.equal(out[0].frozen, true);
+  // La cote a bougé pendant le round : le pari n'est plus celui qui avait été validé.
+  out = stablePicks(st, { ...ctx, phase: 'live', odds: { 'map:A': 1.9 }, list: [mk('map:A', 0.6)] });
+  assert.equal(out.filter((p) => p.kind === 'value').length, 0);
+  // Un « avantage » apparu sur un kill n'est pas proposé.
+  const st2 = {};
+  stablePicks(st2, { ...ctx, phase: 'freezetime', list: [mk('map:A', 0.5)] });
+  out = stablePicks(st2, { ...ctx, phase: 'live', odds: { 'map:A': 2.2 }, list: [mk('map:A', 0.55)] });
+  assert.equal(out.filter((p) => p.kind === 'value').length, 0);
 });
 
 test('tendances recalculées jusqu’au premier kill (achats encore en cours de réception)', () => {

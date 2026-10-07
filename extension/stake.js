@@ -82,6 +82,16 @@
       })).filter((p) => p.map);
     }
   }
+  // Cote ou disponibilité d'une issue ; chg = heure du dernier vrai changement (une cote qui
+  // n'a pas bougé depuis la fin du dernier round n'a pas encore été recalculée par Stake).
+  function setOutcome(out, odds, active, now) {
+    if (typeof odds === 'number' && odds !== out.odds) { out.odds = odds; out.chg = now; }
+    if (typeof active === 'boolean' && active !== out.active) { out.active = active; out.chg = now; }
+    out.seen = now;
+  }
+  function setStatus(market, status, now) {
+    if (status && status !== market.status) { market.status = status; market.chg = now; }
+  }
   // full : la liste d'issues reçue est complète (une issue absente n'est plus jouable).
   function ingestMarket(model, mk, now, full = false) {
     const tpl = String(mk.templateExtId ?? model.markets.get(mk.id)?.tpl ?? '');
@@ -91,7 +101,7 @@
       market = { id: mk.id, tpl, spec: parseSpecifiers(mk.specifiers), name: String(mk.name || '').trim(), outcomes: [] };
       model.markets.set(mk.id, market);
     }
-    if (mk.status) market.status = mk.status;
+    setStatus(market, mk.status, now);
     market.seen = now;
     if (Array.isArray(mk.outcomes)) {
       const got = new Set();
@@ -104,12 +114,10 @@
           market.outcomes.push(out);
           model.dom.set(`${norm(market.name)}|${norm(out.name)}`, out);
         }
-        if (typeof o.odds === 'number') out.odds = o.odds;
-        if (typeof o.active === 'boolean') out.active = o.active;
-        out.seen = now;
+        setOutcome(out, o.odds, o.active, now);
       }
       if (full || mk.outcomes.length) {
-        for (const out of market.outcomes) if (!got.has(out.id)) { out.active = false; out.seen = now; }
+        for (const out of market.outcomes) if (!got.has(out.id)) setOutcome(out, null, false, now);
       }
     }
     return true;
@@ -132,9 +140,7 @@
       if (o.id != null && model.fixture) {
         const out = model.outcomes.get(o.id);
         if (out) {
-          if (typeof o.odds === 'number') out.odds = o.odds;
-          if (typeof o.active === 'boolean') out.active = o.active;
-          out.seen = now; touched = true;
+          setOutcome(out, o.odds, o.active, now); touched = true;
         }
         if (model.markets.has(o.id) || (ours && looksLikeMarket(o))) {
           const mk = model.markets.get(o.id);
@@ -189,7 +195,7 @@
       ...info, at: now, src: { ...model.src },
       markets: [...model.markets.values()].map((m) => ({
         tpl: m.tpl, spec: m.spec, name: m.name, status: m.status || 'active',
-        outcomes: m.outcomes.map((o) => ({ ext: o.ext, name: o.name, odds: o.odds, active: o.active, seen: o.seen })),
+        outcomes: m.outcomes.map((o) => ({ ext: o.ext, name: o.name, odds: o.odds, active: o.active, seen: o.seen, chg: Math.max(o.chg ?? 0, m.chg ?? 0) || null })),
       })),
     };
   }
@@ -383,12 +389,10 @@
       const txt = b.querySelector('[data-testid="fixture-odds"]')?.textContent || '';
       const m = /(\d+)[.,](\d+)/.exec(txt);
       const odds = m ? Number(`${m[1]}.${m[2]}`) : null;
-      if (odds > 1) out.odds = odds;
-      out.active = !b.disabled && odds > 1;
-      out.seen = now; touched = true;
+      setOutcome(out, odds > 1 ? odds : null, !b.disabled && odds > 1, now); touched = true;
       // Cote affichée et cliquable : le marché est ouvert (Stake affiche « suspendu » sinon).
       const mk = model.markets.get(out.market);
-      if (mk && out.active) mk.status = 'active';
+      if (mk && out.active) setStatus(mk, 'active', now);
     }
     if (touched) model.src.dom = now;
   }

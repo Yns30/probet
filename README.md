@@ -70,11 +70,17 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
 4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble. Quand plusieurs paris VALUE sont affichés, la mise totale conseillée est plafonnée à 5 % de la bankroll.
 
+### Cotes fraîches uniquement
+
+- **Après chaque round**, ProBet connaît le résultat tout de suite, Stake met quelques secondes à recalculer. Une cote Stake qui n'a pas changé depuis la fin du round n'est pas utilisée : la ligne affiche **ATTENDRE**, avec la cote minimale à exiger quand la nouvelle cote arrive.
+- **Pendant le round**, aucun nouveau pari VALUE n'est proposé : un « avantage » apparu sur un kill ne peut pas être pris chez Stake. Les paris validés avant le début du round restent affichés tant que leur cote ne bouge pas.
+- **Le journal note un seul pari par marché**, celui qui est conseillé, et non toutes les lignes de handicap ou de total d'un même avis.
+
 ### Modèle + cotes Stake
 
 Quand Stake cote les deux issues d'un marché, ProBet ne se fie plus seulement à son modèle. Il combine son avis avec celui du marché (cotes sans la marge du bookmaker). Exemple : *Modèle 60 % · Stake 48 % → retenu 54 %*. Un pari VALUE n'est proposé que si cette probabilité combinée bat encore la cote. On évite ainsi les « avantages » de 20-30 % qui viennent en fait d'une erreur du modèle (score en retard, composition, forme du jour).
 
-Le poids du modèle part de 50 %. Le journal compare ensuite ProBet et Stake sur le vainqueur de chaque map et ajuste ce poids : il augmente si ProBet prévoit mieux que Stake, il baisse sinon (bilan « Contre Stake » dans Réglages → Journal).
+Le poids du modèle part de 40 %. Le journal compare ensuite ProBet et Stake sur le vainqueur de chaque map et ajuste ce poids : il augmente si ProBet prévoit mieux que Stake, il baisse sinon (bilan « Contre Stake » dans Réglages → Journal).
 
 ### Cotes Stake 100 % automatiques
 

@@ -174,7 +174,7 @@ td.oc { white-space: nowrap; }
 .bookstate .srcs .off { opacity: .6; }
 .bookstate .diag { margin-top: 4px; }
 .bookstate .diag button { padding: 2px 8px; font-size: 11px; }
-.adv.s-suspended .adv-tag { background: rgb(210 153 34 / .15); color: var(--warn); }
+.adv.s-suspended .adv-tag, .adv.s-stale .adv-tag { background: rgb(210 153 34 / .15); color: var(--warn); }
 .adv.s-nobook { opacity: .7; }
 .adv.s-suspect .adv-tag { background: rgb(248 81 73 / .15); color: var(--bad, #f85149); }
 .bookstate .warn { color: var(--warn); }

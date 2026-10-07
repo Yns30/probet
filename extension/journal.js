@@ -189,7 +189,14 @@ export function summarize(j) {
         if (Number.isFinite(s.mk)) mapsVsStake.push([s.pm, s.mk, y, e]);
       }
     }
-    for (const p of Object.values(e.picks)) {
+    // Un seul pari par marché et par round : les anciennes versions notaient chaque ligne
+    // (map, tous les handicaps, tous les totaux) d'un même avis.
+    const once = new Set();
+    for (const p of Object.values(e.picks).sort((x, y) => (x.t ?? 0) - (y.t ?? 0))) {
+      const cat = /^(map|hcp|tot|ot|series|round)/.exec(p.id)?.[1];
+      const k = `${p.kind}|${cat}|${p.round}`;
+      if (once.has(k)) continue;
+      once.add(k);
       const won = settle(p.id, e);
       // Paris sur un round : plus proposés (absents de Stake), anciens relevés ignorés.
       if (won != null && !p.id.startsWith('round')) picks[p.kind]?.push({ ...p, won });

@@ -57,7 +57,7 @@ export function bookOdds(fixture, homeSide, mapNumber) {
     const put = (id, o) => {
       if (!id || !o) return;
       const ok = open && o.active !== false && o.odds > 1;
-      out[id] = { odds: ok ? o.odds : null, at: o.seen ?? fixture.at };
+      out[id] = { odds: ok ? o.odds : null, at: o.seen ?? fixture.at, chg: o.chg ?? null };
     };
     // Marché suspendu sans issues (Stake les retire) : lignes connues, sans cote.
     const EXTS = { 24: ['4', '5'], 28: ['6', '7'] };

@@ -491,7 +491,9 @@ export function marketProb(id, odds) {
 // modèle ignore (forme, compositions, flux plus rapide). w = poids du modèle (0..1), réglé
 // par le journal. Un pari VALUE n'est retenu que si le modèle s'écarte assez du marché pour
 // que l'avis combiné batte encore la cote, marge comprise.
-export const MODEL_WEIGHT = 0.5;
+// Premier journal avec Stake : 24 paris VALUE, 7 gagnés ; Stake en annonçait 9, le modèle 12,6.
+// Le marché mérite plus de poids tant que le journal n'a pas assez de maps pour trancher.
+export const MODEL_WEIGHT = 0.4;
 export function blendMarket(list, odds, w = MODEL_WEIGHT) {
   return list.map((m) => {
     const pk = marketProb(m.id, odds);

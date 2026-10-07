@@ -37,14 +37,20 @@ export function homeSideOf(fixture, [A, B]) {
 }
 // Nom proche (une équipe s'appelle différemment chez HLTV et Stake : « NAVI Junior » /
 // « Natus Vincere Junior ») : même début de nom ou un mot en commun.
+// Mots d'un nom, y compris collés en « camelCase » : « LargadosyPelados » → largadosy, pelados.
+const LINKS = new Set(['y', 'e', 'de', 'do', 'da', 'and', 'of', 'x']);
+const splitWords = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w && !STOP.has(w));
 function nearTeam(hltvName, team) {
-  const words = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w));
+  const words = (s) => splitWords(s).filter((w) => w.length >= 3);
   const h = words(hltvName), hk = teamKey(hltvName);
   for (const n of [team?.name, team?.abbr]) {
     const k = teamKey(n);
     if (k && hk && k.slice(0, 3) === hk.slice(0, 3)) return true;
     if (words(n).some((w) => h.includes(w))) return true;
+    // Sigle HLTV : « LP » = LargadosyPelados (initiales des mots, « y » de liaison retiré).
+    const ws = splitWords(n).map((w) => (w.endsWith('y') && w.length > 3 ? w.slice(0, -1) : w)).filter((w) => !LINKS.has(w));
+    if (hk.length >= 2 && ws.length >= 2 && ws.map((w) => w[0]).join('') === hk) return true;
   }
   return false;
 }
@@ -54,6 +60,12 @@ function looseSideOf(f, [A, B]) {
   if ((sameTeam(B, f.home) && nearTeam(A, f.away)) || (sameTeam(A, f.away) && nearTeam(B, f.home))) return 'B';
   return null;
 }
+function oneTeamSide(f, [A, B]) {
+  if (!f?.home || !f?.away) return null;
+  const hits = [sameTeam(A, f.home), sameTeam(B, f.away), sameTeam(B, f.home), sameTeam(A, f.away)];
+  if (hits.filter(Boolean).length !== 1) return null;
+  return hits[0] || hits[1] ? 'A' : 'B';
+}
 export function findFixture(fixtures, names) {
   for (const f of fixtures) {
     const homeSide = homeSideOf(f, names);
@@ -62,7 +74,11 @@ export function findFixture(fixtures, names) {
   // Une équipe reconnue à coup sûr, l'autre seulement proche : accepté si une seule page
   // Stake correspond (pas de risque de prendre les cotes d'un autre match).
   const loose = fixtures.map((f) => ({ fixture: f, homeSide: looseSideOf(f, names) })).filter((x) => x.homeSide);
-  return loose.length === 1 ? loose[0] : null;
+  if (loose.length) return loose.length === 1 ? loose[0] : null;
+  // Dernier recours : une seule page Stake en direct contient l'une des deux équipes (une équipe
+  // ne joue qu'un match à la fois), l'autre nom n'ayant rien de commun (sigle inconnu).
+  const one = fixtures.filter((f) => f.status === 'live').map((f) => ({ fixture: f, homeSide: oneTeamSide(f, names) })).filter((x) => x.homeSide);
+  return one.length === 1 ? one[0] : null;
 }
 
 const num = (x) => (x == null || x === '' ? NaN : Number(x));

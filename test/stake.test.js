@@ -275,3 +275,18 @@ test('équipes nommées différemment chez HLTV et Stake : reconnues si une seul
   // Rien en commun : pas reconnu.
   assert.equal(findFixture([fx('Team Spirit', 'M80')], ['Spirit', 'FURIA']), null);
 });
+
+test('sigle HLTV inconnu chez Stake (cas réel « LP » / LargadosyPelados)', () => {
+  const fx = (home, away, abbr, status = 'live') => ({ status, home: { name: home, abbr: abbr[0] }, away: { name: away, abbr: abbr[1] }, markets: [] });
+  const ldp = fx('Metanoia Wolves', 'LargadosyPelados', ['Metanoia W', 'LDP']);
+  const other = fx('Galorys', 'Grêmio Esports', ['GAL', 'GRE']);
+  assert.equal(findFixture([other, ldp], ['METANOIA Wolves', 'LP'])?.fixture, ldp);
+  assert.equal(findFixture([other, ldp], ['LP', 'METANOIA Wolves'])?.homeSide, 'B');
+  // Seule l'équipe à domicile est reconnue, adversaire sans rapport : accepté si c'est la seule
+  // page en direct avec cette équipe…
+  const z = fx('Metanoia Wolves', 'Zeta Division', ['MW', 'ZETA']);
+  assert.equal(findFixture([other, z], ['METANOIA Wolves', 'XYZ'])?.fixture, z);
+  // … mais pas si le match n'est pas en direct, ni si deux pages conviennent.
+  assert.equal(findFixture([fx('Metanoia Wolves', 'Zeta Division', ['MW', 'ZETA'], 'prematch')], ['METANOIA Wolves', 'XYZ']), null);
+  assert.equal(findFixture([z, ldp], ['METANOIA Wolves', 'XYZ']), null);
+});

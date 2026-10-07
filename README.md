@@ -84,6 +84,10 @@ Avec **Stake**, il n'y a rien à faire : ouvrez la page du match sur Stake dans 
 
 Comment ça marche : ProBet lit les données que la page Stake utilise déjà pour s'afficher (la liste complète des marchés intégrée à la page, le flux de mises à jour du site, les cotes affichées à l'écran) et relit le match toutes les 5 secondes avec la même requête que le site. Rien n'est cliqué ni ajouté au coupon. Le panneau indique depuis combien de secondes les cotes ont été mises à jour. Si l'onglet Stake reste longtemps en arrière-plan, Chrome peut ralentir la relecture (une fois par minute) : pour des cotes au plus près, mettez Stake dans une fenêtre à part. Domaines pris en charge : stake.com et ses miroirs (stake.bet, stake.ac, stake.games…).
 
+- **Un pari n'est conseillé que s'il est ouvert chez Stake.** Marché suspendu pendant le round : « ATTENDRE » (à jouer à sa réouverture si la cote atteint le minimum). Pari absent de Stake (ex. vainqueur d'un round autre que les pistols) : « PAS SUR STAKE ».
+- **État des sources** sous « Que jouer ? » : page, flux direct, site, relecture, écran (✓ = cotes reçues il y a moins de 30 s).
+- **🩺 Diagnostic Stake** : enregistre pendant 45 s ce que la page Stake reçoit (sans aucune donnée de votre compte : e-mail, solde, identité et jetons sont exclus) et télécharge un fichier à transmettre si la lecture des cotes ne suit pas.
+
 ### Autres bookmakers (liaison en un clic)
 
 Pour un autre bookmaker, ProBet lit les cotes sur sa page ouverte dans un autre onglet, de la même façon qu'il lit HLTV.

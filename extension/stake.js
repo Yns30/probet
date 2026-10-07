@@ -197,11 +197,52 @@
     { query: `query ProbetFixture($slug: String!) { slugFixture(slug: $slug) { ${FIXTURE_FIELDS} } }`, variables: { slug } },
   ];
 
-  globalThis.__probetStakeCore = { parseSpecifiers, mapNumberOf, createModel, ingestFixture, applyPayload, snapshot, matchDomOutcome, mentionsFixture, fixtureQueries, norm };
+  // Diagnostic : rien de ce qui concerne le compte (e-mail, solde, identité, jetons) n'est gardé.
+  const SENSITIVE = /email|balance|kyc|phone|address|intercom|password|token|seed|birthday|"dob"|firstName|lastName|session|cookie|authorization|apiKey/i;
+  const diagSafe = (text) => typeof text === 'string' && !SENSITIVE.test(text);
+
+  globalThis.__probetStakeCore = { diagSafe, parseSpecifiers, mapNumberOf, createModel, ingestFixture, applyPayload, snapshot, matchDomOutcome, mentionsFixture, fixtureQueries, norm };
   if (typeof window === 'undefined' || typeof document === 'undefined' || window.__probetStake) return;
   window.__probetStake = true;
 
   const model = createModel();
+  // Enregistrement de diagnostic (bouton « Diagnostic Stake » du panneau), 45 s.
+  let diag = null;
+  const clip = (t, n = 6000) => (t.length > n ? `${t.slice(0, n)}…[${t.length} car.]` : t);
+  function rec(kind, text, n) {
+    if (!diag || Date.now() > diag.until || typeof text !== 'string') return;
+    diag.count[kind] = (diag.count[kind] || 0) + 1;
+    if (!diagSafe(text)) { diag.skipped[kind] = (diag.skipped[kind] || 0) + 1; return; }
+    if ((diag[kind] ??= []).length < 40) diag[kind].push({ t: Date.now() - diag.start, data: clip(text, n) });
+  }
+  function diagSummary() {
+    const byMarket = {};
+    for (const m of model.markets.values()) {
+      const k = `tpl${m.tpl} map${m.spec.map ?? '-'} ${m.status || '?'}`;
+      byMarket[k] = (byMarket[k] || 0) + 1;
+    }
+    const fx = model.fixture;
+    return {
+      version: 2, page: location.pathname, fixture: fx && { name: fx.name, slug: fx.slug, status: fx.status, matchStatus: fx.matchStatus, mapNumber: fx.mapNumber, rounds: fx.rounds },
+      sources: Object.fromEntries(Object.entries(model.src).map(([k, v]) => [k, `il y a ${Math.round((Date.now() - v) / 1000)} s`])),
+      pollMode, replayCaptured: Boolean(replay), queriesTried: queryIdx, markets: byMarket,
+      dom: {
+        buttons: document.querySelectorAll('button[data-testid="fixture-outcome"]').length,
+        tabs: [...document.querySelectorAll('[data-testid^="tab-"]')].map((b) => b.dataset.testid),
+        titles: [...document.querySelectorAll('.secondary-accordion .header')].map((h) => h.textContent.trim()).slice(0, 40),
+      },
+    };
+  }
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.data?.source !== 'probet-panel' || e.data.type !== 'diag-start' || diag) return;
+    const ms = e.data.ms || 45000;
+    diag = { start: Date.now(), until: Date.now() + ms, count: {}, skipped: {}, before: diagSummary() };
+    setTimeout(() => {
+      const out = { ...diag, after: diagSummary() };
+      diag = null;
+      window.postMessage({ source: 'probet-stake', diag: out }, location.origin);
+    }, ms + 200);
+  });
   const pageSlug = () => location.pathname.split('/').filter(Boolean).pop() || '';
   const onData = (data, source, ours) => {
     try { if (applyPayload(model, data, pageSlug(), Date.now(), source, ours)) send(); } catch { /* format inattendu */ }
@@ -230,6 +271,8 @@
       const req = args[0];
       const url = String(req?.url || req || '');
       if (/\/_api\//.test(url) && /json/.test(res.headers.get('content-type') || '')) {
+        if (GQL.test(url) && typeof args[1]?.body === 'string') rec('gqlOut', args[1].body, 3000);
+        if (GQL.test(url)) res.clone().text().then((t) => { if (/odds|market|fixture/i.test(t)) rec('gqlIn', t, 4000); }, () => {});
         if (GQL.test(url) && !(req instanceof Request) && typeof args[1]?.body === 'string') {
           gqlHeaders = pickHeaders(args[1].headers);
           if (/slugFixture/.test(args[1].body)) replay = { url, body: args[1].body, headers: gqlHeaders };
@@ -245,7 +288,18 @@
     window.WebSocket = new Proxy(OrigWS, {
       construct(target, args, newTarget) {
         const ws = Reflect.construct(target, args, newTarget);
-        try { ws.addEventListener('message', (e) => onText(e.data, 'ws')); } catch { /* ignore */ }
+        const wsUrl = String(args[0] || '').split('?')[0];
+        try {
+          ws.addEventListener('message', (e) => {
+            if (diag && typeof e.data === 'string' && /odds|market|fixture|outcome|status/i.test(e.data)) rec('wsIn', `${wsUrl} ${e.data}`, 4000);
+            else if (diag) rec('wsOther', `${wsUrl} ${String(e.data).slice(0, 300)}`, 400);
+            onText(e.data, 'ws');
+          });
+          const origSend = ws.send.bind(ws);
+          ws.send = (d) => { rec('wsOut', `${wsUrl} ${String(d)}`, 3000); return origSend(d); };
+          rec('wsOpen', wsUrl);
+          (window.__probetWs ??= []).push(wsUrl);
+        } catch { /* ignore */ }
         return ws;
       },
     });
@@ -278,7 +332,10 @@
         req = { url: '/_api/v1/graphql', body: JSON.stringify(q), headers: { ...gqlHeaders, 'content-type': 'application/json' } };
       }
       const res = await origFetch(req.url, { method: 'POST', credentials: 'include', headers: req.headers, body: req.body });
-      const json = await res.json();
+      const text = await res.text();
+      rec('poll', `${res.status} ${req === replay ? 'replay' : 'query' + queryIdx} ${text}`, 1500);
+      let json = null;
+      try { json = JSON.parse(text); } catch { /* ignore */ }
       if (json?.data?.slugFixture) {
         applyPayload(model, json.data, slug, Date.now(), 'poll', true);
         pollMode = replay ? 'replay' : 'query';

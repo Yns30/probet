@@ -201,3 +201,12 @@ test('boutons en tableau (Plus de / Moins de, colonnes par équipe) reconnus', (
   // Libellé complet (aria-label) : correspondance directe.
   assert.equal(matchDomOutcome(model, 'Map 3 Gagnant - Two options', '9z Team', null, null).odds, 2.6);
 });
+
+test('diagnostic : aucune donnée du compte n’est enregistrée', () => {
+  const { diagSafe } = ctx.__probetStakeCore;
+  assert.ok(diagSafe('{"type":"next","payload":{"data":{"sportMarket":{"id":"x","status":"active"}}}}'));
+  assert.ok(!diagSafe('{"data":{"user":{"email":"a@b.c"}}}'));
+  assert.ok(!diagSafe('{"type":"connection_init","payload":{"accessToken":"abc"}}'));
+  assert.ok(!diagSafe('{"balances":[{"available":{"amount":1}}]}'));
+  assert.ok(!diagSafe('{"kycBasic":{"firstName":"X"}}'));
+});

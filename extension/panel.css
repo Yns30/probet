@@ -170,6 +170,12 @@ dialog input { width: 100%; box-sizing: border-box; }
 .live-odds .unlink { background: none; border: none; color: var(--muted); padding: 0 2px; font-size: 11px; }
 td.oc { white-space: nowrap; }
 .bookstate { font-size: 11px; color: var(--muted); margin: -2px 0 8px; }
+.bookstate .srcs { margin-top: 2px; font-size: 10px; }
+.bookstate .srcs .off { opacity: .6; }
+.bookstate .diag { margin-top: 4px; }
+.bookstate .diag button { padding: 2px 8px; font-size: 11px; }
+.adv.s-suspended .adv-tag { background: rgb(210 153 34 / .15); color: var(--warn); }
+.adv.s-nobook { opacity: .7; }
 .bookstate .warn { color: var(--warn); }
 .bookstate .ok { color: var(--good); font-weight: 600; }
 .linkbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgb(63 185 80 / .1); border: 1px solid var(--good); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; font-size: 12px; }

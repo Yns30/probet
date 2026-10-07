@@ -128,6 +128,33 @@ function onBook(msg, tabId) {
   books.set(tabId, { host: msg.host, fixture: msg.fixture, at: Date.now() });
   scheduleRender();
 }
+// Diagnostic : la page Stake enregistre 45 s de ce qu'elle reçoit (sans données du compte),
+// puis le panneau télécharge un fichier à transmettre pour corriger la lecture.
+let diagState = '';
+const DIAG_MS = 45000;
+function startDiag() {
+  if (!hasChrome || diagState) return;
+  for (const tabId of books.keys()) chrome.tabs.sendMessage(tabId, { type: 'probet:diag-start', ms: DIAG_MS }).catch(() => {});
+  diagState = 'Diagnostic en cours (45 s) : laissez le match tourner, ne fermez pas l’onglet Stake…';
+  setTimeout(() => { if (diagState.startsWith('Diagnostic en cours')) { diagState = 'Diagnostic : aucune réponse de la page Stake (rechargez-la puis réessayez).'; render(); } }, DIAG_MS + 8000);
+  render();
+}
+function onDiag(msg) {
+  const src = sources.get(selected);
+  const mem = src && memFor(src.matchId || selected);
+  const panelSide = src && {
+    hltv: { names: [src.meta?.team1?.name, src.meta?.team2?.name], map: src.scoreboard?.mapName, mapNumber: mem?.lastMapNumber, round: src.scoreboard?.currentRound },
+    book: mem?.book, oddsIds: Object.keys(mem?.live || {}).filter((k) => mem.live[k].auto), lines: mem?.bookLines,
+  };
+  const file = { probet: chrome.runtime.getManifest?.().version, at: new Date().toISOString(), host: msg.host, panel: panelSide, stake: msg.diag };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }));
+  a.download = `probet-diagnostic-stake-${Date.now()}.json`;
+  document.body.append(a); a.click(); a.remove();
+  diagState = 'Diagnostic téléchargé ✓ : envoyez le fichier (dossier Téléchargements) pour que la lecture soit corrigée.';
+  setTimeout(() => { diagState = ''; render(); }, 30000);
+  render();
+}
 // Remplit mem.live / mem.odds avec les cotes du bookmaker pour la map en cours.
 function applyBooks(mem, names, mapNumber, matchId) {
   const now = Date.now();
@@ -150,7 +177,7 @@ function applyBooks(mem, names, mapNumber, matchId) {
   mem.bookLines = bookLines(got);
   const fx = hit?.fixture;
   const last = fx ? Math.max(0, ...Object.values(fx.src || {})) : 0;
-  mem.book = hit ? { host: book.host, name: fx.name, age: last ? now - last : null, poll: fx.pollMode,
+  mem.book = hit ? { host: book.host, name: fx.name, age: last ? now - last : null, poll: fx.pollMode, src: fx.src,
     mapMismatch: mapNumber && fx.mapNumber && mapNumber !== fx.mapNumber ? fx.mapNumber : null } : null;
 }
 
@@ -285,6 +312,7 @@ if (hasChrome) {
     else if (msg?.type === 'probet:picked') onPicked(msg, sender.tab?.id);
     else if (msg?.type === 'probet:pick-cancel') endPicking('Liaison annulée.');
     else if (msg?.type === 'probet:book') onBook(msg, sender.tab?.id);
+    else if (msg?.type === 'probet:diag') onDiag(msg);
   });
   chrome.tabs.onRemoved.addListener((id) => {
     if (books.delete(id)) scheduleRender();
@@ -479,7 +507,28 @@ function oddsCell(id, label, mem) {
     <button type="button" class="link" data-link="${esc(id)}" data-label="${esc(label)}" title="Lier à la cote de mon bookmaker">🔗</button>`;
 }
 
-const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI' };
+const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI',
+  suspended: 'ATTENDRE', nobook: 'PAS SUR STAKE' };
+
+// Stake connecté : un pari n'est conseillé que s'il est réellement ouvert chez Stake.
+function bookStatus(rows, mem, matchId) {
+  if (!mem.book) return rows;
+  return rows.map((r) => {
+    if (!r.id || !['play', 'value', 'sure', 'low'].includes(r.status) || linkOf(String(matchId), r.id)) return r;
+    const l = mem.live?.[r.id];
+    if (!l?.auto) return { ...r, status: 'nobook' };
+    if (!(l.odds > 1)) return { ...r, status: 'suspended' };
+    return r;
+  });
+}
+// État de chaque source Stake : ✓ si elle a donné des cotes il y a moins de 30 s.
+function sourcesLine(src) {
+  const NAMES = { page: 'page', ws: 'flux direct', fetch: 'site', poll: 'relecture', dom: 'écran' };
+  return Object.entries(NAMES).map(([k, n]) => {
+    const age = src?.[k] != null ? Date.now() - src[k] : null;
+    return `<span class="${age != null && age < 30000 ? 'ok' : 'off'}">${n} ${age == null ? '✗' : age < 30000 ? '✓' : `${Math.round(age / 1000)} s`}</span>`;
+  }).join(' · ');
+}
 
 function adviceText(r) {
   const bank = Number(settings.bank) || 0;
@@ -494,6 +543,10 @@ function adviceText(r) {
       return `Votre cote ${dec(r.odds)} est trop basse : il faut au moins <b>${dec(r.min)}</b>`;
     case 'wait':
       return `Trop incertain : ne pariez pas sur ce marché pour l'instant`;
+    case 'suspended':
+      return `Marché suspendu chez Stake (round en cours) : jouez à sa réouverture si la cote atteint <b>${dec(r.min)}</b>`;
+    case 'nobook':
+      return 'Ce pari n’est pas proposé par Stake en ce moment';
     default:
       return 'Aucune ligne assez sûre pour l\'instant';
   }
@@ -503,14 +556,19 @@ function renderAdvice(picks, list, conf, mem) {
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
   if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
   mem.advice ??= {};
-  const rows = buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 });
+  const src = sources.get(selected);
+  const rows = bookStatus(buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
-  $('bookState').innerHTML = mem.book
-    ? `<span class="ok">● Cotes ${esc(mem.book.host)} en direct</span> · ${esc(mem.book.name)}${
-      mem.book.age != null ? ` · mises à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
-      mem.book.mapMismatch ? ` · <span class="warn">Stake affiche la map ${mem.book.mapMismatch} : vérifiez la map en cours</span>` : ''}`
+  setHTML($('bookState'), (mem.book
+    ? `<span class="ok">● Cotes ${esc(mem.book.host)}</span> · ${esc(mem.book.name)}${
+      mem.book.age != null ? ` · mise à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
+      mem.book.mapMismatch ? ` · <span class="warn">Stake affiche la map ${mem.book.mapMismatch} : vérifiez la map en cours</span>` : ''}
+      <div class="srcs">${sourcesLine(mem.book.src)}</div>`
     : books.size ? 'Page Stake ouverte, mais pas sur ce match : ouvrez ce match sur Stake.'
-      : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.';
+      : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.')
+    + (books.size ? `<div class="diag">${diagState
+      ? esc(diagState)
+      : '<button type="button" class="ghost" data-diag="1">🩺 Diagnostic Stake</button>'}</div>` : ''));
   setHTML($('advice'), rows.map((r) => {
     const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
@@ -548,6 +606,7 @@ $('marketRows').addEventListener('change', onOddsInput);
 $('advice').addEventListener('change', onOddsInput);
 for (const el of [$('marketRows'), $('advice')]) for (const t of ['pointerdown', 'click']) el.addEventListener(t, onLinkClick);
 $('linkCancel').addEventListener('click', () => endPicking(''));
+$('bookState').addEventListener('pointerdown', (e) => { if (e.target.closest('[data-diag]')) startDiag(); });
 
 function renderPre(m, src) {
   const [A, B] = m.names;
@@ -582,6 +641,7 @@ function process(id, src) {
   expireLive(mem);
   const m = toMatch(src.scoreboard, meta, mem);
   applyBooks(mem, m.names, m.mapNumber, src.matchId);
+  mem.lastMapNumber = m.mapNumber;
   const res = analyze(m);
 
   const pMap = res.over ? (res.over === 'A' ? 1 : 0) : res.pMap;

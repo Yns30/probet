@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { sameTeam, homeSideOf, findFixture, bookOdds, bookLines, pickMapNumber } from '../extension/books.js';
+import { sameTeam, homeSideOf, findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from '../extension/books.js';
 import { analyze, markets } from '../extension/engine.js';
 
 // stake.js est un script de page classique : on l'exécute hors navigateur pour tester ses fonctions pures.
@@ -233,4 +233,19 @@ test('map à suivre : HLTV encore sur la map finie, ou mal compté (cas réel K2
   // Score en direct Stake 11-3 contre 0-2 sur HLTV : désynchronisé, pas de cotes de map.
   assert.equal(pickMapNumber({ ...fx, rounds: { home: 11, away: 3 } }, 'A', { scoreA: 0, scoreB: 2, mapNumber: 2 }).why, 'desync');
   assert.equal(pickMapNumber({ ...fx, rounds: { home: 11, away: 3 } }, 'A', { scoreA: 10, scoreB: 3, mapNumber: 2 }).why, 'same');
+});
+
+test('Stake ferme la map en cours et le match (cas réel Spirit - M80 à 12-6) : signalé', () => {
+  const o = (ext, odds) => ({ ext, name: '', odds, active: true, seen: 1 });
+  const fx = { at: 1, markets: [
+    { tpl: '1', spec: {}, status: 'suspended', outcomes: [] },
+    { tpl: '6', spec: { map: '1', way: 'two' }, status: 'suspended', outcomes: [] },
+    { tpl: '11', spec: { map: '1', handicap: '3.5' }, status: 'removed', outcomes: [o('1', 1.5), o('2', 2.5)] },
+    { tpl: '6', spec: { map: '2', way: 'two' }, status: 'active', outcomes: [o('1', 1.6), o('2', 2.2)] },
+    { tpl: '24', spec: { map: '3', threshold: '21.5' }, status: 'active', outcomes: [o('4', 1.8), o('5', 1.9)] },
+  ] };
+  assert.deepEqual({ ...bookClosure(fx, 1), openMaps: [...bookClosure(fx, 1).openMaps] }, { closed: true, openMaps: [2, 3] });
+  fx.markets[1] = { ...fx.markets[1], status: 'active', outcomes: [o('1', 1.3), o('2', 3.4)] };
+  assert.equal(bookClosure(fx, 1).closed, false);
+  assert.equal(bookClosure({ markets: [] }, 1).closed, false);
 });

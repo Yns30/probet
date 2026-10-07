@@ -136,3 +136,13 @@ export function pickMapNumber(fixture, homeSide, hltv) {
   if (fixture?.mapNumber) return { map: fixture.mapNumber, why: fixture.mapNumber === mapNumber ? 'same' : 'stake' };
   return { map: mapNumber ?? null, why: 'hltv' };
 }
+
+// Stake a-t-il fermé les paris en direct sur la map en cours et le match ? (pause technique,
+// round décisif, flux coupé…) Indique aussi les maps suivantes encore ouvertes.
+export function bookClosure(fixture, mapNumber) {
+  const mks = (fixture?.markets || []).filter((mk) => mk.status !== 'removed');
+  const open = (mk) => mk.status === 'active' && mk.outcomes.some((o) => o.active !== false && o.odds > 1);
+  const current = mks.filter((mk) => mk.tpl === '1' || Number(mk.spec?.map) === mapNumber);
+  const later = new Set(mks.filter((mk) => Number(mk.spec?.map) > mapNumber && open(mk)).map((mk) => Number(mk.spec.map)));
+  return { closed: current.length > 0 && !current.some(open), openMaps: [...later].sort((a, b) => a - b) };
+}

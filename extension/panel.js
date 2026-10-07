@@ -1,7 +1,7 @@
 import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
-import { findFixture, bookOdds, bookLines, pickMapNumber } from './books.js';
+import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
@@ -186,11 +186,17 @@ function applyBooks(mem, m, matchId) {
   mem.bookLines = bookLines(got);
   const fx = hit?.fixture;
   const last = fx ? Math.max(0, ...Object.values(fx.src || {})) : 0;
+  const shut = fx && pick.map != null ? bookClosure(fx, pick.map) : { closed: false, openMaps: [] };
+  if (!shut.closed) mem.closedSince = null; else mem.closedSince ??= now;
+  const shutNote = shut.closed
+    ? `Stake a fermé les paris sur la map ${pick.map} et le match${now - mem.closedSince > 5000 ? ` depuis ${Math.round((now - mem.closedSince) / 1000)} s` : ''} : `
+      + `conseils dès la réouverture${shut.openMaps.length ? ` (ouvert : map ${shut.openMaps.join(', ')})` : ''}`
+    : null;
   mem.book = hit ? { host: book.host, name: fx.name, age: last ? now - last : null, poll: fx.pollMode, src: fx.src,
     map: pick.map, desync: pick.why === 'desync', mapNote: pick.why === 'finished' && pick.map !== fx.mapNumber
       ? `HLTV affiche encore la map ${pick.map} (terminée) : cotes de la map ${fx.mapNumber} dès qu'elle commence`
       : pick.why === 'desync' ? `score différent entre Stake (${fx.rounds.home}-${fx.rounds.away}) et HLTV : cotes de la map en attente`
-      : pick.why === 'stake' && mapNumber ? `cotes de la map ${pick.map} (map en cours chez Stake)` : null } : null;
+      : shutNote ?? (pick.why === 'stake' && mapNumber ? `cotes de la map ${pick.map} (map en cours chez Stake)` : null) } : null;
 }
 
 let renderTimer = null;

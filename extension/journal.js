@@ -120,7 +120,7 @@ export function settle(id, e) {
   if (!f) return null;
   if ((mt = /^map:(A|B)$/.exec(id))) return f.w === mt[1];
   if ((mt = /^tot([\d.]+):(O|U)$/.exec(id))) return (f.a + f.b > Number(mt[1])) === (mt[2] === 'O');
-  if ((mt = /^hcp(-?[\d.]+):A$/.exec(id))) return f.a - f.b + Number(mt[1]) > 0;
+  if ((mt = /^hcp(-?[\d.]+):(A|B)$/.exec(id))) return (f.a - f.b + Number(mt[1]) > 0) === (mt[2] === 'A');
   if ((mt = /^ot:(Y|N)$/.exec(id))) return (f.a + f.b > 24) === (mt[1] === 'Y');
   return null;
 }

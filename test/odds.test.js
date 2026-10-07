@@ -28,7 +28,7 @@ test('marchés à deux issues : l’autre cote est liée automatiquement', () =>
   assert.equal(oppositeId('round7:A'), 'round7:B');
   assert.equal(oppositeId('ot:Y'), 'ot:N');
   assert.equal(oppositeId('tot22.5:O'), 'tot22.5:U');
-  assert.equal(oppositeId('hcp-2.5:A'), null);
+  assert.equal(oppositeId('hcp-2.5:A'), 'hcp-2.5:B');
 });
 
 test('libellé d’une sélection sans sa cote, et comparaison des libellés', () => {

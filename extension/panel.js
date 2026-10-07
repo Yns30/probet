@@ -1,7 +1,7 @@
 import { analyze, markets, confidence, evaluateBet } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
-import { findFixture, bookOdds } from './books.js';
+import { findFixture, bookOdds, bookLines } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
@@ -120,6 +120,8 @@ function expireLive(mem) {
 // stake.js lit la page Stake ouverte et envoie le match chaque seconde : le match HLTV
 // correspondant est retrouvé par les noms d'équipes et ses cotes remplies sans aucun clic.
 const AUTO_TTL = 90000; // cote plus confirmée depuis 90 s (marché masqué, flux coupé) : pas utilisée
+// Onglet Stake en arrière-plan : Chrome peut ne le réveiller qu'une fois par minute.
+const BOOK_TTL = 90000;
 const books = new Map(); // tabId → { host, fixture, at }
 function onBook(msg, tabId) {
   if (tabId == null || !msg.fixture) return;
@@ -129,7 +131,7 @@ function onBook(msg, tabId) {
 // Remplit mem.live / mem.odds avec les cotes du bookmaker pour la map en cours.
 function applyBooks(mem, names, mapNumber, matchId) {
   const now = Date.now();
-  const live = [...books.values()].filter((b) => now - b.at < LIVE_TTL);
+  const live = [...books.values()].filter((b) => now - b.at < BOOK_TTL);
   const hit = findFixture(live.map((b) => b.fixture), names);
   const book = hit && live.find((b) => b.fixture === hit.fixture);
   mem.live ??= {};
@@ -144,7 +146,12 @@ function applyBooks(mem, names, mapNumber, matchId) {
     mem.live[id] = { odds, host: book.host, at: now, auto: true };
     if (odds) mem.odds[id] = odds; else if (prev?.auto && mem.odds[id] === prev.odds) delete mem.odds[id];
   }
-  mem.book = hit ? { host: book.host, name: hit.fixture.name } : null;
+  // Lignes proposées par le bookmaker : ProBet calcule exactement celles-là.
+  mem.bookLines = bookLines(got);
+  const fx = hit?.fixture;
+  const last = fx ? Math.max(0, ...Object.values(fx.src || {})) : 0;
+  mem.book = hit ? { host: book.host, name: fx.name, age: last ? now - last : null, poll: fx.pollMode,
+    mapMismatch: mapNumber && fx.mapNumber && mapNumber !== fx.mapNumber ? fx.mapNumber : null } : null;
 }
 
 let renderTimer = null;
@@ -499,7 +506,9 @@ function renderAdvice(picks, list, conf, mem) {
   const rows = buildAdvice(mem.advice, { list, picks, odds: mem.odds, minEdge: (settings.edge || 4) / 100 });
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
   $('bookState').innerHTML = mem.book
-    ? `<span class="ok">● Cotes ${esc(mem.book.host)} en direct</span> · ${esc(mem.book.name)}`
+    ? `<span class="ok">● Cotes ${esc(mem.book.host)} en direct</span> · ${esc(mem.book.name)}${
+      mem.book.age != null ? ` · mises à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
+      mem.book.mapMismatch ? ` · <span class="warn">Stake affiche la map ${mem.book.mapMismatch} : vérifiez la map en cours</span>` : ''}`
     : books.size ? 'Page Stake ouverte, mais pas sur ce match : ouvrez ce match sur Stake.'
       : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.';
   setHTML($('advice'), rows.map((r) => {
@@ -581,7 +590,7 @@ function process(id, src) {
   if (!prev || Math.abs(prev.p - pMap) > 0.002 || prev.label !== lbl) mem.history.push({ p: pMap, label: lbl });
   if (mem.history.length > 500) mem.history.shift();
 
-  const list = markets(res, m.names, m);
+  const list = markets(res, m.names, m, mem.bookLines);
   const conf = confidence(res, 0.95, m.rounds.length);
   mem.picks ??= {};
   const picks = stablePicks(mem.picks, {

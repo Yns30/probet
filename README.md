@@ -79,7 +79,10 @@ Avec **Stake**, il n'y a rien à faire : ouvrez la page du match sur Stake dans 
 - Les cotes se mettent à jour en direct, avec le conseil (À JOUER / PAS DE PARI, avantage, mise). La ligne « ● Cotes stake.com en direct » sous « Que jouer ? » confirme la connexion.
 - Si Stake suspend un marché, ProBet affiche « suspendu » et ne s'en sert pas. Si l'onglet Stake est fermé, les cotes disparaissent.
 
-Comment ça marche : ProBet lit les données que la page Stake reçoit déjà pour s'afficher (la liste des marchés intégrée à la page, puis le flux de mises à jour du site et les cotes affichées). Aucune requête supplémentaire n'est envoyée à Stake, rien n'est cliqué ni ajouté au coupon. Domaines pris en charge : stake.com et ses miroirs (stake.bet, stake.ac, stake.games…).
+- **Les paris proposés sont ceux qui existent chez Stake.** Les lignes de total et de handicap bougent avec le score (en map 2 à 11-3 : total 16,5 à 21,5, handicaps -4,5 à -9,5). ProBet calcule exactement ces lignes-là, des deux côtés (« FURIA -9,5 » et « 9z +9,5 »), au lieu de lignes fixes.
+- **Tous les onglets Stake sont lus** (Principal, Map 2, Map 3…), pas seulement celui affiché : la page contient tous les marchés, et ProBet relit le match régulièrement pour suivre les lignes ajoutées, suspendues ou retirées.
+
+Comment ça marche : ProBet lit les données que la page Stake utilise déjà pour s'afficher (la liste complète des marchés intégrée à la page, le flux de mises à jour du site, les cotes affichées à l'écran) et relit le match toutes les 5 secondes avec la même requête que le site. Rien n'est cliqué ni ajouté au coupon. Le panneau indique depuis combien de secondes les cotes ont été mises à jour. Si l'onglet Stake reste longtemps en arrière-plan, Chrome peut ralentir la relecture (une fois par minute) : pour des cotes au plus près, mettez Stake dans une fenêtre à part. Domaines pris en charge : stake.com et ses miroirs (stake.bet, stake.ac, stake.games…).
 
 ### Autres bookmakers (liaison en un clic)
 

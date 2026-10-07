@@ -431,7 +431,9 @@ const fmtLine = (x) => (x > 0 ? `+${num(x)}` : num(x));
 export const TOTAL_LINES = [19.5, 20.5, 21.5, 22.5, 23.5];
 
 // Chaque marché : probabilité p et écart-type sd (incertitude du modèle sur la force).
-export function markets(res, names, match) {
+// lines : lignes proposées par le bookmaker (total, handicap côté A). Sans elles, lignes
+// habituelles ; avec elles, exactement celles du bookmaker et les deux côtés du handicap.
+export function markets(res, names, match, lines = {}) {
   const [A, B] = names;
   const out = [];
   const add = (id, group, label, f) => {
@@ -443,18 +445,24 @@ export function markets(res, names, match) {
     add(`round${res.round}:B`, `Round ${res.round}`, B, (s) => 1 - s.pRound);
   }
   const mapLabel = `Map${match.mapNumber ? ' ' + match.mapNumber : ''}`;
+  const book = Boolean(lines.tot?.length || lines.hcp?.length);
   if (!res.over) {
     add('map:A', `${mapLabel} — vainqueur`, A, (s) => s.pMap);
     add('map:B', `${mapLabel} — vainqueur`, B, (s) => 1 - s.pMap);
-    for (const line of TOTAL_LINES) {
+    for (const line of lines.tot?.length ? lines.tot : TOTAL_LINES) {
       if (line < match.scoreA + match.scoreB) continue; // déjà dépassée
       const po = res.pOver(line);
       if (po < 0.03 || po > 0.97) continue; // pratiquement jouée
       add(`tot${line}:O`, `${mapLabel} — total rounds`, `Plus de ${num(line)}`, (s) => s.pOver(line));
       add(`tot${line}:U`, `${mapLabel} — total rounds`, `Moins de ${num(line)}`, (s) => 1 - s.pOver(line));
     }
-    for (const h of [-4.5, -3.5, -2.5, 2.5, 3.5, 4.5]) {
+    for (const h of lines.hcp?.length ? lines.hcp : [-4.5, -3.5, -2.5, 2.5, 3.5, 4.5]) {
+      if (book) {
+        const pc = res.pCover(h);
+        if (pc < 0.03 || pc > 0.97) continue; // ligne jouée d'avance
+      }
       add(`hcp${h}:A`, `${mapLabel} — handicap`, `${A} ${fmtLine(h)}`, (s) => s.pCover(h));
+      if (book) add(`hcp${h}:B`, `${mapLabel} — handicap`, `${B} ${fmtLine(-h)}`, (s) => 1 - s.pCover(h));
     }
     add('ot:Y', `${mapLabel} — prolongation`, 'Oui', (s) => s.pOT);
     add('ot:N', `${mapLabel} — prolongation`, 'Non', (s) => 1 - s.pOT);

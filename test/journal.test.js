@@ -66,6 +66,8 @@ test('règlement des marchés', () => {
   assert.equal(settle('hcp-2.5:A', e), true);
   assert.equal(settle('hcp-3.5:A', e), false);
   assert.equal(settle('hcp2.5:A', e), true);
+  assert.equal(settle('hcp-2.5:B', e), !settle('hcp-2.5:A', e));
+  assert.equal(settle('hcp-3.5:B', e), true);
   assert.equal(settle('ot:N', e), true);
   assert.equal(settle('series:A', e), null);
 });

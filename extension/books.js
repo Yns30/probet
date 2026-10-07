@@ -52,47 +52,66 @@ export function bookOdds(fixture, homeSide, mapNumber) {
   for (const mk of fixture.markets || []) {
     const map = num(mk.spec?.map);
     if (mk.tpl !== '1' && map !== mapNumber) continue;
+    if (mk.status === 'removed') continue; // ligne retirée par Stake
     const open = mk.status === 'active';
     const put = (id, o) => {
       if (!id || !o) return;
       const ok = open && o.active !== false && o.odds > 1;
       out[id] = { odds: ok ? o.odds : null, at: o.seen ?? fixture.at };
     };
-    const by = (ext) => mk.outcomes.find((o) => o.ext === ext);
+    // Marché suspendu sans issues (Stake les retire) : lignes connues, sans cote.
+    const EXTS = { 24: ['4', '5'], 28: ['6', '7'] };
+    const outcomes = mk.outcomes.length ? mk.outcomes
+      : (EXTS[mk.tpl] || ['1', '2']).map((ext) => ({ ext, name: '', odds: null, active: false, seen: fixture.at }));
+    const by = (ext) => outcomes.find((o) => o.ext === ext);
     switch (mk.tpl) {
       case '1': // vainqueur du match
-        for (const o of mk.outcomes) if (sideOf(o.ext)) put(`series:${sideOf(o.ext)}`, o);
+        for (const o of outcomes) if (sideOf(o.ext)) put(`series:${sideOf(o.ext)}`, o);
         break;
       case '6': // vainqueur de la map (version à deux issues seulement)
         if (mk.spec.way === 'three' || mk.outcomes.some((o) => o.ext === '3')) break;
-        for (const o of mk.outcomes) if (sideOf(o.ext)) put(`map:${sideOf(o.ext)}`, o);
+        for (const o of outcomes) if (sideOf(o.ext)) put(`map:${sideOf(o.ext)}`, o);
         break;
       case '10': { // vainqueur d'un round pistol
         const r = num(mk.spec.round);
-        if (r > 0) for (const o of mk.outcomes) if (sideOf(o.ext)) put(`round${r}:${sideOf(o.ext)}`, o);
+        if (r > 0) for (const o of outcomes) if (sideOf(o.ext)) put(`round${r}:${sideOf(o.ext)}`, o);
         break;
       }
-      case '11': { // handicap de rounds sur la map : handicap = celui de l'équipe à domicile
+      case '11': { // handicap de rounds sur la map : « handicap » = celui de l'équipe à domicile
         const h = num(mk.spec.handicap);
         if (Number.isNaN(h)) break;
-        // ProBet exprime le handicap du côté A : A à domicile → issue 1 avec h, sinon issue 2 avec -h.
-        if (homeSide === 'A') put(`hcp${h}:A`, by('1'));
-        else put(`hcp${-h}:A`, by('2'));
+        // ProBet exprime la ligne du côté A : hcp{h}:A = A couvre h, hcp{h}:B = B couvre -h.
+        const line = homeSide === 'A' ? h : -h;
+        put(`hcp${line}:A`, by(homeSide === 'A' ? '1' : '2'));
+        put(`hcp${line}:B`, by(homeSide === 'A' ? '2' : '1'));
         break;
       }
       case '24': { // total de rounds sur la map
         const t = num(mk.spec.threshold);
         if (Number.isNaN(t)) break;
-        put(`tot${t}:U`, by('4') || mk.outcomes.find((o) => /^(under|moins)/i.test(o.name)));
-        put(`tot${t}:O`, by('5') || mk.outcomes.find((o) => /^(over|plus)/i.test(o.name)));
+        put(`tot${t}:U`, by('4') || outcomes.find((o) => /^(under|moins)/i.test(o.name)));
+        put(`tot${t}:O`, by('5') || outcomes.find((o) => /^(over|plus)/i.test(o.name)));
         break;
       }
       case '28': // prolongation
-        put('ot:Y', by('6') || mk.outcomes.find((o) => /^(yes|oui)/i.test(o.name)));
-        put('ot:N', by('7') || mk.outcomes.find((o) => /^(no|non)\b/i.test(o.name)));
+        put('ot:Y', by('6') || outcomes.find((o) => /^(yes|oui)/i.test(o.name)));
+        put('ot:N', by('7') || outcomes.find((o) => /^(no|non)\b/i.test(o.name)));
         break;
       default:
     }
   }
   return out;
+}
+
+// Lignes de total et de handicap (côté A) proposées par le bookmaker : ProBet calcule exactement
+// celles-là, pour ne conseiller que des paris qui existent, avec leur vraie cote.
+export function bookLines(odds) {
+  const tot = new Set(), hcp = new Set();
+  for (const id of Object.keys(odds || {})) {
+    let m;
+    if ((m = /^tot([\d.]+):[OU]$/.exec(id))) tot.add(Number(m[1]));
+    else if ((m = /^hcp(-?[\d.]+):[AB]$/.exec(id))) hcp.add(Number(m[1]));
+  }
+  const sort = (x) => [...x].sort((a, b) => a - b);
+  return { tot: sort(tot), hcp: sort(hcp) };
 }

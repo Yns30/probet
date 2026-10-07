@@ -25,6 +25,7 @@
     if ((m = /^(round\d+|map|series):(A|B)$/.exec(id))) return `${m[1]}:${m[2] === 'A' ? 'B' : 'A'}`;
     if ((m = /^ot:(Y|N)$/.exec(id))) return `ot:${m[1] === 'Y' ? 'N' : 'Y'}`;
     if ((m = /^(tot[\d.]+):(O|U)$/.exec(id))) return `${m[1]}:${m[2] === 'O' ? 'U' : 'O'}`;
+    if ((m = /^(hcp-?[\d.]+):(A|B)$/.exec(id))) return `${m[1]}:${m[2] === 'A' ? 'B' : 'A'}`;
     return null;
   }
 

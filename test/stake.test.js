@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { sameTeam, homeSideOf, findFixture, bookOdds } from '../extension/books.js';
+import { sameTeam, homeSideOf, findFixture, bookOdds, bookLines } from '../extension/books.js';
+import { analyze, markets } from '../extension/engine.js';
 
 // stake.js est un script de page classique : on l'exécute hors navigateur pour tester ses fonctions pures.
 const ctx = vm.createContext({});
 vm.runInContext(readFileSync(new URL('../extension/stake.js', import.meta.url), 'utf8'), ctx);
-const { parseSpecifiers, mapNumberOf, createModel, applyPayload, snapshot } = ctx.__probetStakeCore;
+const { parseSpecifiers, mapNumberOf, createModel, applyPayload, snapshot, matchDomOutcome, mentionsFixture } = ctx.__probetStakeCore;
 
 // Réponse GraphQL « slugFixture » d'une vraie page Stake (Team Falcons - Natus Vincere, map 1 à 9-6).
 const payload = JSON.parse(readFileSync(new URL('./fixtures/stake-fixture.json', import.meta.url), 'utf8'));
@@ -55,7 +56,7 @@ test('mises à jour en direct reconnues par identifiant, quel que soit le format
   const m = snap.markets.find((x) => x.tpl === '6' && x.spec.map === '1' && x.spec.way === 'two');
   assert.equal(m.status, 'suspended');
   assert.equal(m.outcomes[0].odds, 1.11);
-  assert.equal(m.outcomes[0].seen, 6000);
+  assert.equal(m.outcomes[0].seen, 5000); // dernière confirmation de cette cote
 });
 
 test('équipes HLTV ↔ Stake', () => {
@@ -97,6 +98,8 @@ test('marchés Stake → identifiants ProBet pour la map en cours', () => {
   assert.equal(b['map:A'], 4);
   assert.equal(b['hcp2.5:A'], 2.7); // NaVi +2.5
   assert.equal(b['hcp-2.5:A'], 7); // NaVi -2.5
+  assert.equal(b['hcp2.5:B'], 1.4); // Falcons -2.5 = côté B de la ligne NaVi +2.5
+  assert.equal(a['hcp-2.5:B'], 2.7); // NaVi +2.5 = côté B de la ligne Falcons -2.5
   assert.equal(b['tot22.5:O'], 2);
 
   const m2 = odds('A', 2);
@@ -117,4 +120,84 @@ test('marché suspendu ou issue fermée : pas de cote', () => {
   w.outcomes[0].active = false;
   assert.equal(bookOdds(snap, 'A', 1)['series:A'].odds, null);
   assert.equal(bookOdds(snap, 'A', 1)['series:B'].odds, 3.3);
+});
+
+// Deuxième page réelle : FURIA - 9z, map 2 en cours (11-3), marchés de la map suspendus,
+// lignes de handicap et de total décalées par le score.
+const map2 = JSON.parse(readFileSync(new URL('./fixtures/stake-fixture-map2.json', import.meta.url), 'utf8'));
+const SLUG2 = '869002-furia-esports-9z-team';
+
+test('map en cours : lignes réellement proposées par Stake, marchés suspendus sans cote', () => {
+  const model = createModel();
+  applyPayload(model, map2, SLUG2, 1000);
+  const snap = snapshot(model, 1000);
+  assert.equal(snap.mapNumber, 2);
+  const o = bookOdds(snap, 'A', 2); // FURIA = A
+  assert.equal(o['map:A'].odds, null, 'vainqueur map 2 suspendu');
+  const odds = Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.odds]));
+  assert.equal(odds['hcp-9.5:A'], 2.15); // FURIA -9.5
+  assert.equal(odds['hcp-9.5:B'], 1.62); // 9z +9.5
+  assert.equal(odds['tot16.5:O'], 1.62);
+  assert.equal(odds['tot16.5:U'], 2.15);
+  assert.equal(odds['tot22.5:O'], undefined, 'ligne non proposée sur la map 2');
+  const lines = bookLines(o);
+  assert.deepEqual(lines.tot, [16.5, 17.5, 18.5, 19.5, 20.5, 21.5]);
+  assert.deepEqual(lines.hcp, [-9.5, -8.5, -7.5, -6.5, -5.5, -4.5]);
+});
+
+test('le moteur calcule les lignes du bookmaker, des deux côtés du handicap', () => {
+  const m = { scoreA: 11, scoreB: 3, mapNumber: 2 };
+  const res = { pMap: 0.9, pOT: 0.02, over: null, pOver: (l) => (l < 20 ? 0.6 : 0.2), pCover: (h) => (h < -8 ? 0.4 : 0.7) };
+  const list = markets(res, ['FURIA', '9z'], m, { tot: [16.5, 21.5], hcp: [-9.5, -4.5] });
+  const ids = list.map((x) => x.id);
+  assert.ok(ids.includes('tot16.5:O') && ids.includes('tot21.5:U'));
+  assert.ok(!ids.includes('tot22.5:O'));
+  assert.ok(ids.includes('hcp-9.5:A') && ids.includes('hcp-9.5:B'));
+  const b = list.find((x) => x.id === 'hcp-9.5:B');
+  assert.equal(b.label, '9z +9,5');
+  assert.ok(Math.abs(b.p - 0.6) < 1e-9);
+  // Sans bookmaker : lignes habituelles, inchangées.
+  assert.ok(markets(res, ['A', 'B'], { scoreA: 0, scoreB: 0 }).some((x) => x.id === 'tot22.5:O'));
+});
+
+test('nouvelle ligne poussée en direct pour ce match ; ligne retirée lors de la relecture', () => {
+  const model = createModel();
+  applyPayload(model, map2, SLUG2, 1000);
+  const msg = { type: 'next', payload: { data: { markets: [{ id: 'nouveau-hcp', templateExtId: '11', extId: '11', name: 'Map 2 - Handicap du tour (inclus prolongations)',
+    status: 'active', specifiers: 'handicap=-10.5|map=2', fixtureId: map2.data.slugFixture.id,
+    outcomes: [{ id: 'n1', extId: '1', name: 'FURIA Esports (-10.5)', odds: 3.1, active: true }, { id: 'n2', extId: '2', name: '9z Team (10.5)', odds: 1.33, active: true }] }] } } };
+  const text = JSON.stringify(msg);
+  assert.ok(mentionsFixture(model, text));
+  applyPayload(model, msg, SLUG2, 2000, 'ws', mentionsFixture(model, text));
+  let o = bookOdds(snapshot(model, 2000), 'A', 2);
+  assert.equal(o['hcp-10.5:A'].odds, 3.1);
+  // Même message pour un autre match : ignoré.
+  const other = createModel();
+  applyPayload(other, map2, SLUG2, 1000);
+  const foreign = JSON.parse(text.replaceAll(map2.data.slugFixture.id, 'autre'));
+  applyPayload(other, foreign, SLUG2, 2000, 'ws', mentionsFixture(other, JSON.stringify(foreign)));
+  assert.equal(bookOdds(snapshot(other, 2000), 'A', 2)['hcp-10.5:A'], undefined);
+  // Relecture complète sans la ligne -9.5 : elle disparaît.
+  const reread = JSON.parse(JSON.stringify(map2));
+  for (const g of reread.data.slugFixture.groups) for (const t of g.templates) t.markets = t.markets.filter((x) => x.specifiers !== 'handicap=-9.5|map=2');
+  applyPayload(model, reread, SLUG2, 3000, 'poll', true);
+  o = bookOdds(snapshot(model, 3000), 'A', 2);
+  assert.equal(o['hcp-9.5:A'], undefined);
+  assert.equal(snapshot(model, 3000).src.poll, 3000);
+});
+
+test('boutons en tableau (Plus de / Moins de, colonnes par équipe) reconnus', () => {
+  const model = createModel();
+  applyPayload(model, map2, SLUG2, 1000);
+  const over = matchDomOutcome(model, 'Map 2 - Nombre de tours', null, '16.5', 'Plus de');
+  assert.equal(over.name, 'Over 16.5');
+  const under = matchDomOutcome(model, 'Map 2 - Nombre de tours', null, '16.5', 'Moins de');
+  assert.equal(under.name, 'Under 16.5');
+  const nine = matchDomOutcome(model, 'Map 2 - Handicap du tour (inclus prolongations)', null, '9.5', '9z Team');
+  assert.equal(nine.name, '9z Team (9.5)');
+  const furia = matchDomOutcome(model, 'Map 2 - Handicap du tour (inclus prolongations)', null, '-9.5', 'FURIA Esports');
+  assert.equal(furia.name, 'FURIA Esports (-9.5)');
+  assert.equal(matchDomOutcome(model, 'Map 2 - Nombre de tours', null, '99.5', 'Plus de'), null);
+  // Libellé complet (aria-label) : correspondance directe.
+  assert.equal(matchDomOutcome(model, 'Map 3 Gagnant - Two options', '9z Team', null, null).odds, 2.6);
 });

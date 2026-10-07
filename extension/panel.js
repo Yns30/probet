@@ -1,4 +1,4 @@
-import { analyze, markets, confidence, evaluateBet } from './engine.js';
+import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
@@ -538,7 +538,8 @@ function bookStatus(rows, mem, matchId) {
     if (!l?.auto) return { ...r, status: 'nobook' };
     if (!(l.odds > 1)) return { ...r, status: 'suspended' };
     // Cote très loin du modèle : presque toujours un décalage (score, map) plutôt qu'une aubaine.
-    if (r.p != null && Math.abs(1 / l.odds - r.p) > 0.3) return { ...r, status: 'suspect' };
+    const pm = r.pm ?? r.p;
+    if (pm != null && Math.abs(1 / l.odds - pm) > 0.3) return { ...r, status: 'suspect' };
     return r;
   });
 }
@@ -551,6 +552,8 @@ function sourcesLine(src) {
   }).join(' · ');
 }
 
+// Avis du modèle et du marché quand Stake cote les deux issues.
+const mixNote = (r) => (r.pk != null && r.pm != null ? `<div class="adv-note">Modèle ${pct(r.pm)} · Stake ${pct(r.pk)} → retenu ${pct(r.p)}</div>` : '');
 function adviceText(r) {
   const bank = Number(settings.bank) || 0;
   switch (r.status) {
@@ -567,7 +570,7 @@ function adviceText(r) {
     case 'suspended':
       return `Marché suspendu chez Stake (round en cours) : jouez à sa réouverture si la cote atteint <b>${dec(r.min)}</b>`;
     case 'suspect':
-      return `Cote Stake ${dec(r.odds ?? 0)} très éloignée du modèle (${pct(r.p)}) : vérifiez que Stake et HLTV montrent le même score avant de jouer`;
+      return `Cote Stake ${dec(r.odds ?? 0)} très éloignée du modèle (${pct(r.pm ?? r.p)}) : vérifiez que Stake et HLTV montrent le même score avant de jouer`;
     case 'nobook':
       return 'Ce pari n’est pas proposé par Stake en ce moment';
     default:
@@ -597,7 +600,7 @@ function renderAdvice(picks, list, conf, mem) {
     return `<li class="adv s-${r.status}${go ? ' go' : ''}">
       <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
       ${r.id ? `<div class="adv-line"><span class="adv-sel">${esc(r.sel)}</span><span class="adv-p">${pct(r.p)}</span></div>` : ''}
-      <div class="adv-how">${adviceText(r)}</div>${frozen}
+      <div class="adv-how">${adviceText(r)}</div>${mixNote(r)}${frozen}
       ${r.id ? `<div class="adv-odds">${oddsCell(r.id, `${r.sel} — ${r.label}`, mem)}</div>` : ''}
     </li>`;
   }).join(''));
@@ -652,6 +655,17 @@ function renderFeed(src) {
     .map((l) => `<li class="${l.type === 'RoundEnd' ? 'round' : ''}">${esc(l.text)}</li>`).join('');
 }
 
+// Poids du modèle face aux cotes Stake : appris sur les maps du journal, recalculé au plus
+// une fois par minute.
+let weightCache = { at: 0, w: MODEL_WEIGHT };
+function modelWeight() {
+  if (Date.now() - weightCache.at > 60000) {
+    const vs = summarize(journal).vsStake;
+    weightCache = { at: Date.now(), w: vs?.maps >= 5 ? vs.w : MODEL_WEIGHT };
+  }
+  return weightCache.w;
+}
+
 // Analyse d'un match (affiché ou non) : probabilités, paris, historique, journal.
 function process(id, src) {
   const mem = memFor(src.matchId || id);
@@ -672,7 +686,8 @@ function process(id, src) {
   if (!prev || Math.abs(prev.p - pMap) > 0.002 || prev.label !== lbl) mem.history.push({ p: pMap, label: lbl });
   if (mem.history.length > 500) mem.history.shift();
 
-  const list = markets(res, m.names, m, mem.bookLines);
+  // Avis du modèle combiné aux cotes Stake (poids appris par le journal).
+  const list = blendMarket(markets(res, m.names, m, mem.bookLines), mem.odds, modelWeight());
   const conf = confidence(res, 0.95, m.rounds.length);
   mem.picks ??= {};
   const picks = stablePicks(mem.picks, {
@@ -682,7 +697,8 @@ function process(id, src) {
   });
   if (src.matchId && src.matchId !== 'demo') {
     const jkey = mapKeyOf(src.matchId, m.map || key);
-    record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta });
+    const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', mem.odds) : null;
+    record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
     backfill(journal, src.matchId, src.meta?.maps);
     logPicks(journal, jkey, picks, { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
@@ -761,6 +777,8 @@ function renderJournal() {
   const lines = [`<b>${sm.maps}</b> map${sm.maps > 1 ? 's' : ''} enregistrée${sm.maps > 1 ? 's' : ''} (${sm.finished} terminée${sm.finished > 1 ? 's' : ''}), <b>${sm.rounds.n}</b> rounds.`];
   if (sm.rounds.n >= 20) lines.push(`Rounds : écart quadratique ${dec(sm.rounds.brier, 3)} (0,25 = pile ou face, plus bas = meilleur).`);
   if (sm.map.vsHltv?.n >= 10) lines.push(`Map : ProBet ${dec(sm.map.vsHltv.probet, 3)} contre HLTV ${dec(sm.map.vsHltv.hltv, 3)} (plus bas = meilleur).`);
+  const vs = sm.vsStake;
+  if (vs?.maps >= 3) lines.push(`Contre Stake (${vs.maps} maps) : ProBet ${dec(vs.probet, 3)}, cotes Stake ${dec(vs.stake, 3)}, combiné ${dec(vs.mixed, 3)} · poids du modèle utilisé ${pct(vs.maps >= 5 ? vs.w : MODEL_WEIGHT)}.`);
   const pk = (x, name) => x.n ? `${name} : ${x.won}/${x.n} gagnés (${pct(x.won / x.n)}, annoncé ${pct(x.expected)})${x.units != null ? `, ${x.units >= 0 ? '+' : ''}${dec(x.units, 1)} unités` : ''}.` : null;
   for (const l of [pk(sm.picks.lean, 'Tendances'), pk(sm.picks.value, 'Paris VALUE')]) if (l) lines.push(l);
   if (sm.maps && sm.finished < 10) lines.push('Les chiffres deviennent parlants après une dizaine de maps terminées.');

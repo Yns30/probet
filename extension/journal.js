@@ -2,7 +2,7 @@
 // prévoyaient et ce qui s'est réellement passé, ainsi que les paris proposés.
 // Sert à mesurer la justesse du modèle sur de vrais matchs et à le recalibrer.
 // Fonctions pures sur un objet sérialisable { v, maps: { clé: entrée } }.
-import { mapWinner, normalizeMap } from './engine.js';
+import { mapWinner, normalizeMap, sig, logit, MODEL_WEIGHT } from './engine.js';
 
 export const JOURNAL_VERSION = 1;
 const MAX_MAPS = 200;
@@ -28,7 +28,8 @@ function slimBoard(sb) {
 }
 
 // Une mise à jour du panneau → journal. ctx : { key, matchId, m (toMatch), res (analyze), hltv, scoreboard, meta, t }
-export function record(j, { key, matchId, m, res, hltv, scoreboard, meta, t = Date.now() }) {
+// mk : probabilité « A gagne la map » selon les cotes Stake (sans marge), si connue.
+export function record(j, { key, matchId, m, res, hltv, scoreboard, meta, mk = null, t = Date.now() }) {
   let e = j.maps[key];
   if (!e) {
     e = j.maps[key] = {
@@ -59,7 +60,7 @@ export function record(j, { key, matchId, m, res, hltv, scoreboard, meta, t = Da
     R.start = {
       t, ready, a: m.scoreA, b: m.scoreB, side: m.aSide, buyA: m.buyA, buyB: m.buyB, eA: m.equipA, eB: m.equipB,
       pr: r3(res.pRound), pm: r3(res.pMap), pot: r3(res.pOT), ps: r3(res.pSeries), sdD: r3(res.strength?.sd),
-      hl, sb: slimBoard(scoreboard),
+      hl, mk: r3(mk), sb: slimBoard(scoreboard),
     };
   }
   // Pendant le round : un relevé à chaque changement de situation (kill, bombe).
@@ -103,6 +104,7 @@ export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.no
     if (e.picks[id]) continue;
     e.picks[id] = {
       id: p.id, kind: p.kind, group: p.group, label: p.label, p: r3(p.p), pc: r3(p.pc), sd: r3(p.sd),
+      pm: r3(p.pModel), pk: r3(p.pMkt),
       odds: p.odds ?? null, target: r3(p.target), round, a, b, t, phase, ready,
     };
   }
@@ -139,9 +141,25 @@ function calibration(pairs) {
   return out.filter((b) => b.n).map((b) => ({ lo: b.lo, hi: b.hi, n: b.n, predicted: b.p / b.n, observed: b.hit / b.n }));
 }
 
+// ProBet contre les cotes Stake sur le vainqueur de la map, et poids du modèle qui donne la
+// meilleure prévision combinée (sert au calcul des paris VALUE).
+function vsStake(xs) {
+  if (!xs.length) return null;
+  const c = (p) => Math.min(1 - 1e-4, Math.max(1e-4, p));
+  const mix = (w) => brier(xs.map(([p, k, y]) => [sig(w * logit(c(p)) + (1 - w) * logit(c(k))), y]));
+  let best = 0;
+  for (let w = 0; w <= 1.0001; w += 0.05) if (mix(w) < mix(best) - 1e-12) best = Math.round(w * 100) / 100;
+  // Les relevés d'une même map ne sont pas indépendants : le poids appris n'est suivi que
+  // progressivement (10 maps « virtuelles » à 0,5).
+  const maps = new Set(xs.map((x) => x[3])).size;
+  const w = Math.round(((maps * best + 10 * MODEL_WEIGHT) / (maps + 10)) * 100) / 100;
+  return { n: xs.length, maps, probet: brier(xs.map(([p, , y]) => [p, y])),
+    stake: brier(xs.map(([, k, y]) => [k, y])), best, w, mixed: mix(best) };
+}
+
 export function summarize(j) {
   const entries = Object.values(j.maps);
-  const rounds = [], maps = [], mapsVsHltv = [], priors = [];
+  const rounds = [], maps = [], mapsVsHltv = [], mapsVsStake = [], priors = [];
   const picks = { lean: [], value: [] };
   for (const e of entries) {
     for (const R of Object.values(e.rounds)) {
@@ -155,11 +173,13 @@ export function summarize(j) {
         if (!Number.isFinite(s?.pm) || s.ready === false) continue;
         maps.push([s.pm, y]);
         if (Number.isFinite(s.hl?.p)) mapsVsHltv.push([s.pm, s.hl.p, y]);
+        if (Number.isFinite(s.mk)) mapsVsStake.push([s.pm, s.mk, y, e]);
       }
     }
     for (const p of Object.values(e.picks)) {
       const won = settle(p.id, e);
-      if (won != null) picks[p.kind]?.push({ ...p, won });
+      // Paris sur un round : plus proposés (absents de Stake), anciens relevés ignorés.
+      if (won != null && !p.id.startsWith('round')) picks[p.kind]?.push({ ...p, won });
     }
   }
   const pickStats = (xs) => ({
@@ -181,6 +201,7 @@ export function summarize(j) {
         hltv: brier(mapsVsHltv.map(([, h, y]) => [h, y])),
       } : null,
     },
+    vsStake: vsStake(mapsVsStake),
     prior: { n: priors.length, brier: brier(priors) },
     picks: { lean: pickStats(picks.lean), value: pickStats(picks.value) },
   };

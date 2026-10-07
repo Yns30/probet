@@ -1,6 +1,5 @@
-// Conseil de paris : un tableau fixe, toujours les mêmes lignes dans le même ordre (round,
-// map, handicap, total, prolongation, série). Chaque ligne a un statut clair au lieu
-// d'apparaître et de disparaître :
+// Conseil de paris : un tableau fixe, toujours les mêmes lignes dans le même ordre (map,
+// handicap, total, prolongation, série). Chaque ligne a un statut clair au lieu d'apparaître et de disparaître :
 //   value : cote saisie suffisante → À JOUER (avantage, mise conseillée)
 //   play  : sélection solide → À JOUER si la cote du bookmaker atteint la cote minimale
 //   sure  : quasi acquis → la cote sera sûrement trop basse ; à jouer seulement si ≥ minimum
@@ -9,8 +8,9 @@
 //   none  : aucune ligne intéressante sur ce marché → PAS DE PARI
 import { PICK, evaluateBet } from './engine.js';
 
+export const MAX_EXPOSURE = 0.05;
+
 export const CATEGORIES = [
-  { key: 'round', label: (m) => m.group, test: (id) => id.startsWith('round') },
   { key: 'map', label: () => 'Vainqueur de la map', test: (id) => id.startsWith('map:') },
   { key: 'hcp', label: () => 'Handicap (écart de rounds)', test: (id) => id.startsWith('hcp') },
   { key: 'tot', label: () => 'Total de rounds', test: (id) => id.startsWith('tot') },
@@ -31,7 +31,8 @@ export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04 }) {
     if (pick) {
       state.fav[cat.key] = pick.id;
       rows.push({ key: cat.key, label, id: pick.id, sel: pick.label, p: pick.p, status: pick.kind === 'value' ? 'value' : 'play',
-        min: pick.target, odds: pick.odds ?? odds[pick.id] ?? null, ev: pick.ev, stake: pick.stake, frozen: pick.frozen, now: pick.now });
+        min: pick.target, odds: pick.odds ?? odds[pick.id] ?? null, ev: pick.ev, stake: pick.stake, frozen: pick.frozen, now: pick.now,
+        pm: pick.pModel, pk: pick.pMkt });
       continue;
     }
     // Pas de pari retenu : on montre quand même la sélection favorite et pourquoi on ne joue pas.
@@ -54,7 +55,11 @@ export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04 }) {
     if (o && (evaluateBet(pc, o)?.ev ?? -1) < minEdge) status = 'low';
     else if (fav.p > PICK.leanMax) status = 'sure';
     else status = 'wait';
-    rows.push({ key: cat.key, label, id: fav.id, sel: fav.label, p: fav.p, status, min, odds: o });
+    rows.push({ key: cat.key, label, id: fav.id, sel: fav.label, p: fav.p, status, min, odds: o, pm: fav.pModel, pk: fav.pMkt });
   }
+  // Les paris d'une même map vont souvent dans le même sens (map, handicap, série de la même
+  // équipe) : ils gagnent ou perdent ensemble. Mise totale plafonnée.
+  const total = rows.reduce((s, r) => s + (r.status === 'value' ? r.stake || 0 : 0), 0);
+  if (total > MAX_EXPOSURE) for (const r of rows) if (r.status === 'value') r.stake *= MAX_EXPOSURE / total;
   return rows;
 }

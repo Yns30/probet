@@ -57,7 +57,7 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 
 ## Comment parier avec ProBet
 
-La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (round en cours, vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :
+La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :
 
 | Statut | Signification | Que faire |
 |---|---|---|
@@ -68,7 +68,13 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 1. Repérez une ligne **À JOUER**, ouvrez ce marché chez votre bookmaker.
 2. Comparez sa cote à la **cote minimale** de ProBet : au-dessus, le pari est rentable à long terme ; en dessous, passez.
 3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
-4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble.
+4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble. Quand plusieurs paris VALUE sont affichés, la mise totale conseillée est plafonnée à 5 % de la bankroll.
+
+### Modèle + cotes Stake
+
+Quand Stake cote les deux issues d'un marché, ProBet ne se fie plus seulement à son modèle. Il combine son avis avec celui du marché (cotes sans la marge du bookmaker). Exemple : *Modèle 60 % · Stake 48 % → retenu 54 %*. Un pari VALUE n'est proposé que si cette probabilité combinée bat encore la cote. On évite ainsi les « avantages » de 20-30 % qui viennent en fait d'une erreur du modèle (score en retard, composition, forme du jour).
+
+Le poids du modèle part de 50 %. Le journal compare ensuite ProBet et Stake sur le vainqueur de chaque map et ajuste ce poids : il augmente si ProBet prévoit mieux que Stake, il baisse sinon (bilan « Contre Stake » dans Réglages → Journal).
 
 ### Cotes Stake 100 % automatiques
 
@@ -103,7 +109,7 @@ Les conseils sont choisis entre les rounds et figés pendant le round (mention �
 
 ## Marchés calculés
 
-Vainqueur du round en cours, vainqueur de la map, total de rounds (plus/moins), handicaps, prolongation oui/non, vainqueur de la série.
+Vainqueur de la map, total de rounds (plus/moins), handicaps, prolongation oui/non, vainqueur de la série. Pas de pari sur le vainqueur d'un round : Stake ne le propose pas. ProBet calcule quand même cette probabilité, qui fait avancer toutes les autres, et la note dans le journal.
 
 Pour chaque marché, ProBet donne la **probabilité**, la **cote juste** et la **cote minimale à exiger** chez votre bookmaker. Ouvrez **Tous les marchés** et entrez les cotes de votre bookmaker : les paris à espérance positive apparaissent en tête avec le badge **VALUE**, l'avantage en % et une mise conseillée (quart de Kelly, plafonnée à 5 % de la bankroll).
 

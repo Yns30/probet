@@ -15,7 +15,7 @@ const rowsFor = (st, list, odds = {}) => buildAdvice(st, { list, odds, picks: re
 test('conseil : toujours les mêmes lignes, dans le même ordre', () => {
   for (const pMap of [0.55, 0.75, 0.95]) {
     const rows = rowsFor({}, market(pMap));
-    assert.deepEqual(rows.map((r) => r.key), ['round', 'map', 'hcp', 'tot', 'ot']);
+    assert.deepEqual(rows.map((r) => r.key), ['map', 'hcp', 'tot', 'ot']);
   }
 });
 

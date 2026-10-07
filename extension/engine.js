@@ -440,10 +440,8 @@ export function markets(res, names, match, lines = {}) {
     const p = f(res);
     out.push({ id, group, label, p, sd: res.spread ? res.spread(f) : 0 });
   };
-  if (res.pRound != null) {
-    add(`round${res.round}:A`, `Round ${res.round}`, A, (s) => s.pRound);
-    add(`round${res.round}:B`, `Round ${res.round}`, B, (s) => 1 - s.pRound);
-  }
+  // Pas de marché « vainqueur du round » : Stake ne le propose pas (la probabilité du round
+  // reste calculée et notée dans le journal pour mesurer le modèle).
   const mapLabel = `Map${match.mapNumber ? ' ' + match.mapNumber : ''}`;
   const book = Boolean(lines.tot?.length || lines.hcp?.length);
   if (!res.over) {
@@ -472,6 +470,35 @@ export function markets(res, names, match, lines = {}) {
     add('series:B', 'Série — vainqueur', B, (s) => 1 - s.pSeries);
   }
   return out;
+}
+
+// Autre issue d'un marché à deux issues.
+export function oppositeOf(id) {
+  let m;
+  if ((m = /^(round\d+|map|series):(A|B)$/.exec(id))) return `${m[1]}:${m[2] === 'A' ? 'B' : 'A'}`;
+  if ((m = /^ot:(Y|N)$/.exec(id))) return `ot:${m[1] === 'Y' ? 'N' : 'Y'}`;
+  if ((m = /^(tot[\d.]+):(O|U)$/.exec(id))) return `${m[1]}:${m[2] === 'O' ? 'U' : 'O'}`;
+  if ((m = /^(hcp-?[\d.]+):(A|B)$/.exec(id))) return `${m[1]}:${m[2] === 'A' ? 'B' : 'A'}`;
+  return null;
+}
+// Probabilité du marché sans la marge du bookmaker (cotes des deux issues), ou null.
+export function marketProb(id, odds) {
+  const o = odds?.[id], q = odds?.[oppositeOf(id)];
+  if (!(o > 1) || !(q > 1)) return null;
+  return (1 / o) / (1 / o + 1 / q);
+}
+// Avis du modèle et avis du marché combinés (en logit) : le bookmaker voit des choses que le
+// modèle ignore (forme, compositions, flux plus rapide). w = poids du modèle (0..1), réglé
+// par le journal. Un pari VALUE n'est retenu que si le modèle s'écarte assez du marché pour
+// que l'avis combiné batte encore la cote, marge comprise.
+export const MODEL_WEIGHT = 0.5;
+export function blendMarket(list, odds, w = MODEL_WEIGHT) {
+  return list.map((m) => {
+    const pk = marketProb(m.id, odds);
+    if (pk == null) return { ...m, pModel: m.p, pMkt: null };
+    const pm = clamp(m.p, 1e-4, 1 - 1e-4), qk = clamp(pk, 1e-4, 1 - 1e-4);
+    return { ...m, pModel: m.p, pMkt: pk, p: sig(w * logit(pm) + (1 - w) * logit(qk)), sd: (m.sd || 0) * w };
+  });
 }
 
 // Une cote décimale + proba modèle → valeur attendue et mise Kelly fractionnée.

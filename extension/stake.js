@@ -74,6 +74,13 @@
     if (es.homeScore != null) fx.score = { home: es.homeScore, away: es.awayScore };
     const sb = es.scoreboard;
     if (sb && sb.homeWonRounds != null) fx.rounds = { home: sb.homeWonRounds, away: sb.awayWonRounds };
+    else if ('scoreboard' in es) fx.rounds = null; // entre deux maps : plus de score en cours
+    // Scores des maps (terminées ou en cours) : servent à savoir quelle map HLTV affiche.
+    if (Array.isArray(es.periodScores)) {
+      fx.periods = es.periodScores.map((p) => ({
+        map: p.number ?? mapNumberOf(p.matchStatus), home: p.homeWonRounds ?? null, away: p.awayWonRounds ?? null,
+      })).filter((p) => p.map);
+    }
   }
   // full : la liste d'issues reçue est complète (une issue absente n'est plus jouable).
   function ingestMarket(model, mk, now, full = false) {
@@ -247,12 +254,23 @@
   const onData = (data, source, ours) => {
     try { if (applyPayload(model, data, pageSlug(), Date.now(), source, ours)) send(); } catch { /* format inattendu */ }
   };
+  // Abonnements WebSocket du site qui portent sur ce match (variables.fixtureId).
+  const ourSubs = new Set();
   const onText = (text, source) => {
     if (typeof text !== 'string' || text.length > 5e6 || !/odds|status|groups/.test(text)) return;
+    // Paris d'autres joueurs (« highroller ») : cotes au moment du pari, pas les cotes actuelles.
+    if (/"SportBet"|highrollerSportBets|"sportBet/.test(text)) return;
     let data;
     try { data = JSON.parse(text); } catch { return; }
-    onData(data, source, mentionsFixture(model, text));
+    onData(data, source, mentionsFixture(model, text) || (data?.id != null && ourSubs.has(data.id)));
   };
+  function watchSubscribe(raw) {
+    try {
+      const m = JSON.parse(raw);
+      const v = m?.payload?.variables || {};
+      if (m?.type === 'subscribe' && model.fixture?.keys?.includes(v.fixtureId)) ourSubs.add(m.id);
+    } catch { /* ignore */ }
+  }
 
   // 1. Réseau : réponses de l'API du site. On retient aussi la requête GraphQL du site (en-têtes,
   // et la requête du match si le site la fait) pour pouvoir la rejouer.
@@ -296,7 +314,7 @@
             onText(e.data, 'ws');
           });
           const origSend = ws.send.bind(ws);
-          ws.send = (d) => { rec('wsOut', `${wsUrl} ${String(d)}`, 3000); return origSend(d); };
+          ws.send = (d) => { rec('wsOut', `${wsUrl} ${String(d)}`, 3000); if (typeof d === 'string') watchSubscribe(d); return origSend(d); };
           rec('wsOpen', wsUrl);
           (window.__probetWs ??= []).push(wsUrl);
         } catch { /* ignore */ }

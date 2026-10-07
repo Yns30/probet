@@ -176,8 +176,12 @@ td.oc { white-space: nowrap; }
 .bookstate .diag button { padding: 2px 8px; font-size: 11px; }
 .adv.s-suspended .adv-tag { background: rgb(210 153 34 / .15); color: var(--warn); }
 .adv.s-nobook { opacity: .7; }
+.adv.s-suspect .adv-tag { background: rgb(248 81 73 / .15); color: var(--bad, #f85149); }
 .bookstate .warn { color: var(--warn); }
 .bookstate .ok { color: var(--good); font-weight: 600; }
 .linkbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: rgb(63 185 80 / .1); border: 1px solid var(--good); border-radius: 8px; padding: 7px 10px; margin-bottom: 8px; font-size: 12px; }
 .linkbar[hidden] { display: none; }
 .linkbar button { padding: 2px 8px; font-size: 11px; }
+
+.diagcard { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
+.diagcard button { align-self: flex-start; padding: 4px 10px; font-size: 12px; }

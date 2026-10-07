@@ -115,3 +115,24 @@ export function bookLines(odds) {
   const sort = (x) => [...x].sort((a, b) => a - b);
   return { tot: sort(tot), hcp: sort(hcp) };
 }
+
+// Map dont il faut prendre les cotes. HLTV peut encore afficher la map qui vient de finir (ou
+// mal compter les maps jouées) : si son score correspond à une map terminée chez Stake, c'est
+// celle-là ; sinon, la map en cours chez Stake fait foi.
+export function pickMapNumber(fixture, homeSide, hltv) {
+  const { scoreA, scoreB, mapNumber } = hltv || {};
+  for (const p of fixture?.periods || []) {
+    if (p.home == null || p.away == null) continue;
+    const [a, b] = homeSide === 'A' ? [p.home, p.away] : [p.away, p.home];
+    if (a === scoreA && b === scoreB && Math.max(a, b) >= 13) return { map: p.map, why: 'finished' };
+  }
+  // Score de la map en cours chez Stake très différent de celui d'HLTV : pas la même map (ou
+  // un des deux en retard) : on n'utilise pas les cotes de la map.
+  const r = fixture?.rounds;
+  if (r && r.home != null && scoreA != null) {
+    const [a, b] = homeSide === 'A' ? [r.home, r.away] : [r.away, r.home];
+    if (Math.abs(a - scoreA) + Math.abs(b - scoreB) > 3) return { map: null, why: 'desync' };
+  }
+  if (fixture?.mapNumber) return { map: fixture.mapNumber, why: fixture.mapNumber === mapNumber ? 'same' : 'stake' };
+  return { map: mapNumber ?? null, why: 'hltv' };
+}

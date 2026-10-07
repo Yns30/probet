@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { sameTeam, homeSideOf, findFixture, bookOdds, bookLines } from '../extension/books.js';
+import { sameTeam, homeSideOf, findFixture, bookOdds, bookLines, pickMapNumber } from '../extension/books.js';
 import { analyze, markets } from '../extension/engine.js';
 
 // stake.js est un script de page classique : on l'exécute hors navigateur pour tester ses fonctions pures.
@@ -209,4 +209,28 @@ test('diagnostic : aucune donnée du compte n’est enregistrée', () => {
   assert.ok(!diagSafe('{"type":"connection_init","payload":{"accessToken":"abc"}}'));
   assert.ok(!diagSafe('{"balances":[{"available":{"amount":1}}]}'));
   assert.ok(!diagSafe('{"kycBasic":{"firstName":"X"}}'));
+});
+
+test('map à suivre : HLTV encore sur la map finie, ou mal compté (cas réel K27 - Metizport)', () => {
+  const model = createModel();
+  applyPayload(model, map2, SLUG2, 1000);
+  // Message réel du flux Stake (forme du diagnostic) : map 1 finie 11-13, map 2 en cours.
+  applyPayload(model, { id: 'sub', type: 'next', payload: { data: { sportFixture: { id: map2.data.slugFixture.id, status: 'live',
+    eventStatus: { matchStatus: '2e map', homeScore: 0, awayScore: 1, scoreboard: null, periodScores: [
+      { type: 'map', number: 1, homeWonRounds: 11, awayWonRounds: 13, matchStatus: '1re map' },
+      { type: 'map', number: 2, homeWonRounds: null, awayWonRounds: null, matchStatus: '2e map' }] } } } } }, SLUG2, 2000, 'ws');
+  const fx = snapshot(model, 2000);
+  assert.equal(fx.mapNumber, 2);
+  assert.deepEqual(fx.periods.map((p) => p.map), [1, 2]);
+  // HLTV affiche encore la fin de la map 1 (11-13, « map 1 ») : la map 1.
+  assert.deepEqual({ ...pickMapNumber(fx, 'A', { scoreA: 11, scoreB: 13, mapNumber: 1 }) }, { map: 1, why: 'finished' });
+  // Même chose avec les équipes inversées côté HLTV.
+  assert.equal(pickMapNumber(fx, 'B', { scoreA: 13, scoreB: 11, mapNumber: 1 }).map, 1);
+  // HLTV en direct sur la map 2 mais compte « map 1 » : la map en cours chez Stake fait foi.
+  assert.deepEqual({ ...pickMapNumber(fx, 'A', { scoreA: 5, scoreB: 3, mapNumber: 1 }) }, { map: 2, why: 'stake' });
+  assert.equal(pickMapNumber(fx, 'A', { scoreA: 5, scoreB: 3, mapNumber: 2 }).why, 'same');
+  assert.equal(pickMapNumber({}, 'A', { scoreA: 0, scoreB: 0, mapNumber: 3 }).map, 3);
+  // Score en direct Stake 11-3 contre 0-2 sur HLTV : désynchronisé, pas de cotes de map.
+  assert.equal(pickMapNumber({ ...fx, rounds: { home: 11, away: 3 } }, 'A', { scoreA: 0, scoreB: 2, mapNumber: 2 }).why, 'desync');
+  assert.equal(pickMapNumber({ ...fx, rounds: { home: 11, away: 3 } }, 'A', { scoreA: 10, scoreB: 3, mapNumber: 2 }).why, 'same');
 });

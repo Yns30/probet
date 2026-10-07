@@ -4,7 +4,7 @@ import { analyze, markets } from '../extension/engine.js';
 import { toMatch } from '../extension/hltv.js';
 import { stablePicks } from '../extension/picks.js';
 import { createDemoMatch } from '../extension/demo.js';
-import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates } from '../extension/journal.js';
+import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates, pendingMatches } from '../extension/journal.js';
 
 // Suit une map simulée entière comme le ferait le panneau.
 function playMap(seed) {
@@ -121,4 +121,19 @@ test('début de round enregistré seulement une fois les achats reçus', () => {
   assert.equal(j.maps.k.rounds[4].start.pr, 0.5);
   record(j, { key: 'k', matchId: 1, m: m(true, 'full'), res: res(0.55) });
   assert.equal(j.maps.k.rounds[4].start.pr, 0.5); // figé une fois complet
+});
+
+test('maps quittées avant la fin : matchs à relire sur HLTV', () => {
+  const now = 10 * 86400000;
+  const j = { v: 1, maps: {
+    '1|nuke': { matchId: '1', map: 'de_nuke', updated: now - 3600000, final: null, picks: {} },
+    '2|nuke': { matchId: '2', map: 'de_nuke', updated: now - 3600000, final: { a: 13, b: 5, w: 'A' }, picks: { 'lean:series:A': { id: 'series:A' } } },
+    '3|nuke': { matchId: '3', map: 'de_nuke', updated: now - 3600000, final: { a: 13, b: 5, w: 'A' }, picks: {} },
+    '4|nuke': { matchId: '4', map: 'de_nuke', updated: now - 60000, final: null, picks: {} }, // encore en cours
+    '5|nuke': { matchId: '5', map: 'de_nuke', updated: now - 5 * 86400000, final: null, picks: {} }, // trop ancien
+    'demo|nuke': { matchId: 'demo', map: 'de_nuke', updated: now - 3600000, final: null, picks: {} },
+  } };
+  assert.deepEqual(pendingMatches(j, now), ['1', '2']);
+  backfill(j, '1', [{ name: 'Nuke', s1: 9, s2: 13 }, { name: 'Mirage', s1: 13, s2: 4 }]);
+  assert.deepEqual(j.maps['1|nuke'].final, { a: 9, b: 13, w: 'B' });
 });

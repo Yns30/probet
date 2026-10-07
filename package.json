@@ -1,6 +1,6 @@
 {
   "name": "probet",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "description": "Assistant de paris CS2 en direct basé sur la page de match HLTV (extension Chrome/Edge)",
   "type": "module",
   "private": true,

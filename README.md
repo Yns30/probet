@@ -136,6 +136,8 @@ Pendant que vous suivez un match, ProBet enregistre sur votre PC, sans aucune re
 - le vainqueur de chaque round et le score final de la map (complété depuis la page si vous l'avez manquée) ;
 - chaque pari proposé (TENDANCE ou VALUE, avec la cote saisie), réglé automatiquement à la fin.
 
+Si vous fermez la page HLTV avant la fin d'une map, ProBet relit plus tard la page du match sur HLTV (au plus une fois par heure, sans l'ouvrir) pour connaître le score final et régler les paris.
+
 Dans **Réglages → Journal des matchs** : le bilan (justesse des prévisions, ProBet contre HLTV, paris gagnés par rapport à l'annoncé), un bouton **Exporter le journal** (fichier `.json`) et un bouton **Effacer**. Envoyez l'export pour faire recalibrer le modèle sur de vrais matchs : les chiffres deviennent parlants après une dizaine de maps terminées. Les journaux des versions 2.5.x, où une même map pouvait apparaître plusieurs fois, sont nettoyés automatiquement à l'ouverture du panneau.
 
 Analyse d'un export (Node 20+) : `node tools/analyse-journal.mjs probet-journal-AAAA-MM-JJ.json`. L'analyse affiche le calibrage par tranche (« annoncé 70 % → observé … »), les paris par marché, et rejoue le modèle actuel sur les rounds enregistrés pour mesurer l'effet d'une modification.

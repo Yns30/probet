@@ -95,6 +95,19 @@ export function backfill(j, matchId, maps) {
   }
 }
 
+// Matchs dont une map (ou la série) n'a pas encore de résultat, suivis il y a assez longtemps
+// pour être terminés : leurs résultats sont relus sur HLTV pour régler les paris.
+export function pendingMatches(j, now = Date.now(), { after = 20 * 60000, before = 3 * 86400000 } = {}) {
+  const ids = new Set();
+  for (const e of Object.values(j.maps)) {
+    const age = now - (e.updated ?? e.started ?? 0);
+    if (!/^\d+$/.test(String(e.matchId)) || age < after || age > before) continue;
+    const seriesPick = Object.values(e.picks || {}).some((p) => p.id.startsWith('series:'));
+    if (!e.final || (seriesPick && !e.series)) ids.add(String(e.matchId));
+  }
+  return [...ids];
+}
+
 // Paris affichés : chaque pari est noté la première fois qu'il apparaît.
 export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.now() } = {}) {
   const e = j.maps[key];

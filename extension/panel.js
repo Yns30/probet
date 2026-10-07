@@ -4,7 +4,7 @@ import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
-import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf } from './journal.js';
+import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -802,11 +802,42 @@ $('btnClearJournal').addEventListener('click', () => {
   renderJournal();
 });
 
+// ---------- Résultats manquants ----------
+// Maps quittées avant la fin : ProBet relit la page HLTV du match (sans l'ouvrir) pour
+// connaître le score final et régler les paris notés. Une tentative par match et par heure.
+const settleTried = new Map();
+async function settlePending() {
+  if (!hasChrome) return;
+  const open = new Set([...sources.values()].map((s) => String(s.matchId)));
+  for (const id of pendingMatches(journal)) {
+    if (open.has(id) || Date.now() - (settleTried.get(id) ?? 0) < 3600000) continue;
+    settleTried.set(id, Date.now());
+    try {
+      const r = await fetch(`https://www.hltv.org/matches/${id}/probet`, { credentials: 'include' });
+      if (!r.ok) continue;
+      const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+      const int = (el) => { const n = parseInt(el?.textContent?.trim(), 10); return Number.isInteger(n) ? n : null; };
+      const maps = [...doc.querySelectorAll('.mapholder')].map((h) => ({
+        name: h.querySelector('.mapname')?.textContent?.trim(),
+        s1: int(h.querySelector('.results-left .results-team-score')),
+        s2: int(h.querySelector('.results-right .results-team-score')),
+      }));
+      backfill(journal, id, maps);
+      for (const [k, e] of Object.entries(journal.maps)) if (String(e.matchId) === id) journalDirty.add(k);
+      saveJournal();
+    } catch { /* HLTV indisponible : nouvel essai plus tard */ }
+    await new Promise((ok) => setTimeout(ok, 3000)); // pas de rafale de requêtes
+  }
+  renderJournal();
+}
+
 // ---------- Démarrage ----------
 
 await loadSettings();
 await loadLinks();
 await loadJournal();
+settlePending();
+setInterval(settlePending, 10 * 60000);
 await discover();
 setInterval(() => {
   // Rafraîchit les méta-données (maps, cotes) et l'indicateur d'activité.

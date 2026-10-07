@@ -338,6 +338,24 @@ if (hasChrome) {
   });
 }
 
+// Pages Stake ouvertes : on leur demande leurs cotes (relecture immédiate, même en onglet
+// caché). Onglet ouvert avant l'installation ou la mise à jour de l'extension : les scripts de
+// lecture y sont injectés, sans recharger la page.
+const STAKE_URLS = (hasChrome && chrome.runtime.getManifest().content_scripts?.find((c) => c.js.includes('stake.js'))?.matches) || [];
+async function wakeBooks() {
+  if (!hasChrome || !STAKE_URLS.length) return;
+  const tabs = await chrome.tabs.query({ url: STAKE_URLS }).catch(() => []);
+  for (const t of tabs) {
+    if (t.discarded || t.status !== 'complete') continue;
+    const ok = await chrome.tabs.sendMessage(t.id, { type: 'probet:book-get' }).catch(() => null);
+    if (ok) continue;
+    try {
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['stake.js'], world: 'MAIN' });
+      await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['stake-relay.js'] });
+    } catch { /* page non accessible */ }
+  }
+}
+
 async function discover() {
   if (!hasChrome) return;
   const tabs = await chrome.tabs.query({ url: 'https://www.hltv.org/matches/*' });
@@ -593,7 +611,7 @@ function renderAdvice(picks, list, conf, mem) {
       mem.book.age != null ? ` · mise à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
       mem.book.mapNote ? ` · <span class="warn">${esc(mem.book.mapNote)}</span>` : ''}
       <div class="srcs">${sourcesLine(mem.book.src)}</div>`
-    : books.size ? 'Page Stake ouverte, mais pas sur ce match : ouvrez ce match sur Stake.'
+    : books.size ? `Page${books.size > 1 ? 's' : ''} Stake ouverte${books.size > 1 ? 's' : ''} (${esc([...books.values()].map((b) => b.fixture?.name).filter(Boolean).join(', ') || 'aucun match')}) : pas ce match. Ouvrez ce match sur Stake.`
       : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.')
     );
   setHTML($('advice'), rows.map((r) => {
@@ -865,6 +883,8 @@ await loadJournal();
 settlePending();
 setInterval(settlePending, 10 * 60000);
 await discover();
+wakeBooks();
+setInterval(wakeBooks, 15000);
 setInterval(() => {
   // Rafraîchit les méta-données (maps, cotes) et l'indicateur d'activité.
   if (hasChrome && typeof selected === 'number') {

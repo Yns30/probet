@@ -35,12 +35,34 @@ export function homeSideOf(fixture, [A, B]) {
   if (sameTeam(B, fixture.home) && sameTeam(A, fixture.away)) return 'B';
   return null;
 }
+// Nom proche (une équipe s'appelle différemment chez HLTV et Stake : « NAVI Junior » /
+// « Natus Vincere Junior ») : même début de nom ou un mot en commun.
+function nearTeam(hltvName, team) {
+  const words = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !STOP.has(w));
+  const h = words(hltvName), hk = teamKey(hltvName);
+  for (const n of [team?.name, team?.abbr]) {
+    const k = teamKey(n);
+    if (k && hk && k.slice(0, 3) === hk.slice(0, 3)) return true;
+    if (words(n).some((w) => h.includes(w))) return true;
+  }
+  return false;
+}
+function looseSideOf(f, [A, B]) {
+  if (!f?.home || !f?.away) return null;
+  if ((sameTeam(A, f.home) && nearTeam(B, f.away)) || (sameTeam(B, f.away) && nearTeam(A, f.home))) return 'A';
+  if ((sameTeam(B, f.home) && nearTeam(A, f.away)) || (sameTeam(A, f.away) && nearTeam(B, f.home))) return 'B';
+  return null;
+}
 export function findFixture(fixtures, names) {
   for (const f of fixtures) {
     const homeSide = homeSideOf(f, names);
     if (homeSide) return { fixture: f, homeSide };
   }
-  return null;
+  // Une équipe reconnue à coup sûr, l'autre seulement proche : accepté si une seule page
+  // Stake correspond (pas de risque de prendre les cotes d'un autre match).
+  const loose = fixtures.map((f) => ({ fixture: f, homeSide: looseSideOf(f, names) })).filter((x) => x.homeSide);
+  return loose.length === 1 ? loose[0] : null;
 }
 
 const num = (x) => (x == null || x === '' ? NaN : Number(x));

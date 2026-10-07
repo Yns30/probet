@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProBet CS2",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "description": "Assistant de paris CS2 en direct : lit la page de match HLTV ouverte, calcule les probabilités en temps réel et récupère les cotes Stake automatiquement.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -14,7 +14,17 @@
     "https://*/*"
   ],
   "host_permissions": [
-    "https://www.hltv.org/*"
+    "https://www.hltv.org/*",
+    "https://stake.com/*",
+    "https://stake.bet/*",
+    "https://stake.ac/*",
+    "https://stake.games/*",
+    "https://stake.pet/*",
+    "https://stake.mba/*",
+    "https://stake.jp/*",
+    "https://stake.bz/*",
+    "https://stake.ceo/*",
+    "https://stake.krd/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -247,6 +247,12 @@
     };
   }
   window.addEventListener('message', (e) => {
+    // Le panneau demande des cotes à jour : les messages arrivent même quand Chrome ralentit les
+    // minuteurs de l'onglet caché, la relecture est donc faite ici.
+    if (e.source === window && e.data?.source === 'probet-panel' && e.data.type === 'refresh') {
+      lastPoll = 0; lastSent = ''; readEmbedded(); poll(); send();
+      return;
+    }
     if (e.source !== window || e.data?.source !== 'probet-panel' || e.data.type !== 'diag-start' || diag) return;
     const ms = e.data.ms || 45000;
     diag = { start: Date.now(), until: Date.now() + ms, count: {}, skipped: {}, before: diagSummary() };
@@ -344,12 +350,19 @@
 
   // 3. Relecture complète du match toutes les 5 s (ralentie par Chrome si l'onglet est caché).
   let queryIdx = 0, pollMode = 'off', polling = false, lastPoll = 0;
+  // Page d'un match : « …/869001-team-spirit-m80 ».
+  const isMatchSlug = (slug) => /^\d+-./.test(slug);
   async function poll() {
     const slug = pageSlug();
-    if (polling || !model.fixture || model.fixture.slug !== slug || Date.now() - lastPoll < 4500) return;
+    // Match ouvert en naviguant dans le site (sans recharger) : le JSON intégré est celui de la
+    // page d'avant et le site charge le nouveau match en plusieurs morceaux. On le demande
+    // directement, tout de suite.
+    const known = model.fixture?.slug === slug;
+    if (polling || !isMatchSlug(slug) || Date.now() - lastPoll < (known ? 4500 : 1500)) return;
     polling = true; lastPoll = Date.now();
+    // Requête du site rejouée seulement si elle porte sur ce match.
+    let req = replay && replay.body.includes(slug) ? replay : null;
     try {
-      let req = replay;
       if (!req) {
         const q = fixtureQueries(slug)[queryIdx];
         if (!q) return; // aucune requête ne fonctionne : flux et écran seulement
@@ -362,10 +375,10 @@
       try { json = JSON.parse(text); } catch { /* ignore */ }
       if (json?.data?.slugFixture) {
         applyPayload(model, json.data, slug, Date.now(), 'poll', true);
-        pollMode = replay ? 'replay' : 'query';
+        pollMode = req === replay ? 'replay' : 'query';
         send();
-      } else if (!replay) { queryIdx++; pollMode = 'off'; }
-    } catch { if (!replay) queryIdx++; } finally { polling = false; }
+      } else if (req !== replay) { queryIdx++; pollMode = 'off'; } else replay = null;
+    } catch { if (req !== replay) queryIdx++; else replay = null; } finally { polling = false; }
   }
 
   // 4. Boutons de cote affichés : la valeur à l'écran fait foi.

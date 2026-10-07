@@ -263,3 +263,15 @@ test('heure du dernier vrai changement de cote (cote pas encore recalculée apr�
   const snap = snapshot(model, 8000).markets.find((m) => m.outcomes.some((x) => x.chg === 7000));
   assert.ok(snap);
 });
+
+test('équipes nommées différemment chez HLTV et Stake : reconnues si une seule page correspond', () => {
+  const fx = (home, away, abbr = ['', '']) => ({ home: { name: home, abbr: abbr[0] }, away: { name: away, abbr: abbr[1] }, markets: [] });
+  const navi = fx('Natus Vincere Junior', 'Lazer Cats');
+  assert.equal(findFixture([navi], ['Lazer Cats', 'NAVI Junior'])?.homeSide, 'B');
+  // Deux pages avec la même équipe et un adversaire seulement « proche » : on ne devine pas.
+  assert.equal(findFixture([fx('Lazer Kittens', 'NAVI Academy'), fx('Lazer Cats', 'Natus Vincere Junior')], ['Lazer Cats', 'NAVI Junior'])?.homeSide, 'A');
+  const other = fx('Junior Stars', 'Lazer Cats');
+  assert.equal(findFixture([navi, other], ['Lazer Cats', 'NAVI Junior']), null);
+  // Rien en commun : pas reconnu.
+  assert.equal(findFixture([fx('Team Spirit', 'M80')], ['Spirit', 'FURIA']), null);
+});

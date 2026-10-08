@@ -61,7 +61,8 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 
 | Statut | Signification | Que faire |
 |---|---|---|
-| **À JOUER** (vert) | Sélection solide | Jouez seulement si la cote du bookmaker est **au moins égale à la cote minimale** affichée |
+| **À JOUER** (vert) | Cote réelle suffisante (pari VALUE) | Jouez, à la mise indiquée. Un bip le signale (désactivable dans Réglages) |
+| **FAVORI** | Sélection probable, sans cote connue | Information : ne jouez que si la cote atteint **la cote minimale** affichée |
 | **SI BONNE COTE** (orange) | Quasi acquis | La cote sera sûrement trop basse ; jouez seulement si elle atteint le minimum |
 | **PAS DE PARI** (gris) | Trop incertain, ou cote saisie trop basse | Ne jouez pas ce marché pour l'instant |
 
@@ -148,6 +149,8 @@ Pendant que vous suivez un match, ProBet enregistre sur votre PC, sans aucune re
 - chaque pari proposé (TENDANCE ou VALUE, avec la cote saisie), réglé automatiquement à la fin.
 
 Si vous fermez la page HLTV avant la fin d'une map, ProBet relit plus tard la page du match sur HLTV (au plus une fois par heure, sans l'ouvrir) pour connaître le score final et régler les paris.
+
+Le bilan des paris donne, pour les paris VALUE et les tendances : la cote moyenne, **la réussite nécessaire pour ne pas perdre** à ces cotes, la réussite réelle, le gain à mise fixe et à la mise conseillée, le détail par marché, et la **cote battue** (part des paris dont la cote Stake a baissé au round suivant : le meilleur signe qu'on bat le bookmaker, bien avant que le taux de réussite soit parlant). Les tendances sont des favoris : elles gagnent souvent mais à des cotes basses, leur taux de réussite ne dit pas si elles rapportent.
 
 Dans **Réglages → Journal des matchs** : le bilan (justesse des prévisions, ProBet contre HLTV, paris gagnés par rapport à l'annoncé), un bouton **Exporter le journal** (fichier `.json`) et un bouton **Effacer**. Envoyez l'export pour faire recalibrer le modèle sur de vrais matchs : les chiffres deviennent parlants après une dizaine de maps terminées. Les journaux des versions 2.5.x, où une même map pouvait apparaître plusieurs fois, sont nettoyés automatiquement à l'ouverture du panneau.
 

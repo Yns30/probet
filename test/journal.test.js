@@ -4,7 +4,7 @@ import { analyze, markets } from '../extension/engine.js';
 import { toMatch } from '../extension/hltv.js';
 import { stablePicks } from '../extension/picks.js';
 import { createDemoMatch } from '../extension/demo.js';
-import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates, pendingMatches } from '../extension/journal.js';
+import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates, pendingMatches, trackNext } from '../extension/journal.js';
 
 // Suit une map simulée entière comme le ferait le panneau.
 function playMap(seed) {
@@ -136,4 +136,27 @@ test('maps quittées avant la fin : matchs à relire sur HLTV', () => {
   assert.deepEqual(pendingMatches(j, now), ['1', '2']);
   backfill(j, '1', [{ name: 'Nuke', s1: 9, s2: 13 }, { name: 'Mirage', s1: 13, s2: 4 }]);
   assert.deepEqual(j.maps['1|nuke'].final, { a: 9, b: 13, w: 'B' });
+});
+
+test('bilan des paris : cote moyenne, réussite nécessaire, cote battue', () => {
+  const j = { v: 1, maps: { m: { matchId: '1', map: 'nuke', teams: ['A', 'B'], rounds: {}, final: { a: 13, b: 5, w: 'A' }, picks: {
+    'value:map:A': { id: 'map:A', kind: 'value', p: 0.5, odds: 2.5, stake: 0.02, round: 3, t: 1 },
+    'value:hcp-4.5:B': { id: 'hcp-4.5:B', kind: 'value', p: 0.4, odds: 3, stake: 0.01, round: 5, t: 2 },
+    'lean:tot21.5:U': { id: 'tot21.5:U', kind: 'lean', p: 0.8, target: 1.4, round: 3, t: 1 },
+  } } } };
+  // Round 6 : nouvelles cotes Stake ; la map A est passée de 2,5 à 2,0 (cote battue).
+  assert.equal(trackNext(j, 'm', { 'map:A': 2.0, 'hcp-4.5:B': 3.2 }, 6), true);
+  assert.equal(trackNext(j, 'm', { 'map:A': 1.5 }, 7), false, 'première cote suivante seulement');
+  const v = summarize(j).picks.value;
+  assert.equal(v.n, 2);
+  assert.equal(v.won, 1);
+  assert.ok(Math.abs(v.units - 0.5) < 1e-9); // +1,5 et −1
+  assert.ok(Math.abs(v.avgOdds - 2.75) < 1e-9);
+  assert.ok(Math.abs(v.breakEven - (0.4 + 1 / 3) / 2) < 1e-9);
+  assert.ok(Math.abs(v.staked - (0.03 - 0.01)) < 1e-9);
+  assert.equal(v.beat.n, 2);
+  assert.equal(v.beat.share, 0.5);
+  assert.deepEqual(Object.keys(summarize(j).picks.valueByMarket), ['hcp', 'map']);
+  const l = summarize(j).picks.lean;
+  assert.ok(Math.abs(l.atMin - 0.4) < 1e-9);
 });

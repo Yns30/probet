@@ -118,9 +118,23 @@ export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.no
     e.picks[id] = {
       id: p.id, kind: p.kind, group: p.group, label: p.label, p: r3(p.p), pc: r3(p.pc), sd: r3(p.sd),
       pm: r3(p.pModel), pk: r3(p.pMkt),
-      odds: p.odds ?? null, target: r3(p.target), round, a, b, t, phase, ready,
+      odds: p.odds ?? null, target: r3(p.target), stake: r3(p.stake), round, a, b, t, phase, ready,
     };
   }
+}
+
+// Cote « suivante » d'un pari VALUE : première cote Stake fraîche d'un round suivant. Si elle
+// est plus basse que la cote prise, le marché est venu vers nous : on a battu le bookmaker.
+export function trackNext(j, key, odds, round) {
+  const e = j.maps[key];
+  if (!e) return false;
+  let changed = false;
+  for (const p of Object.values(e.picks)) {
+    if (p.kind !== 'value' || p.next != null || !(round > p.round) || !(odds[p.id] > 1)) continue;
+    p.next = odds[p.id];
+    changed = true;
+  }
+  return changed;
 }
 
 // Issue d'un marché : true (gagné), false (perdu), null (inconnue).
@@ -202,13 +216,30 @@ export function summarize(j) {
       if (won != null && !p.id.startsWith('round')) picks[p.kind]?.push({ ...p, won });
     }
   }
-  const pickStats = (xs) => ({
-    n: xs.length,
-    won: xs.filter((x) => x.won).length,
-    expected: xs.length ? xs.reduce((s, x) => s + (x.p ?? 0), 0) / xs.length : null,
-    // Paris VALUE : gain à mise fixe d'une unité, à la cote saisie.
-    units: xs.some((x) => x.odds) ? xs.reduce((s, x) => s + (x.odds ? (x.won ? x.odds - 1 : -1) : 0), 0) : null,
-  });
+  const pickStats = (xs) => {
+    const priced = xs.filter((x) => x.odds > 1);
+    const nexts = priced.filter((x) => x.next > 1);
+    const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
+    return {
+      n: xs.length,
+      won: xs.filter((x) => x.won).length,
+      expected: xs.length ? sum(xs, (x) => x.p ?? 0) / xs.length : null,
+      // Gain à mise fixe d'une unité, à la cote prise.
+      units: priced.length ? sum(priced, (x) => (x.won ? x.odds - 1 : -1)) : null,
+      avgOdds: priced.length ? sum(priced, (x) => x.odds) / priced.length : null,
+      // Réussite nécessaire pour ne pas perdre d'argent à ces cotes.
+      breakEven: priced.length ? sum(priced, (x) => 1 / x.odds) / priced.length : null,
+      // Gain à la mise conseillée (en % de la bankroll).
+      staked: priced.some((x) => x.stake > 0) ? sum(priced, (x) => (x.stake > 0 ? (x.won ? x.odds - 1 : -1) * x.stake : 0)) : null,
+      // Tendances : gain si chacune avait été jouée exactement à la cote minimale affichée.
+      atMin: !priced.length && xs.some((x) => x.target > 1) ? sum(xs, (x) => (x.target > 1 ? (x.won ? x.target - 1 : -1) : 0)) : null,
+      avgMin: !priced.length && xs.some((x) => x.target > 1) ? sum(xs, (x) => x.target || 0) / xs.filter((x) => x.target > 1).length : null,
+      // Cote battue : part des paris dont la cote Stake a ensuite baissé, et écart moyen.
+      beat: nexts.length ? { n: nexts.length, share: nexts.filter((x) => x.next < x.odds).length / nexts.length, clv: sum(nexts, (x) => x.odds / x.next - 1) / nexts.length } : null,
+    };
+  };
+  const MARKETS = ['hcp', 'map', 'tot', 'ot', 'series'];
+  const byMarket = (xs) => Object.fromEntries(MARKETS.map((m) => [m, pickStats(xs.filter((x) => x.id.startsWith(m)))]).filter(([, v]) => v.n));
   return {
     maps: entries.length,
     finished: entries.filter((e) => e.final).length,
@@ -223,7 +254,7 @@ export function summarize(j) {
     },
     vsStake: vsStake(mapsVsStake),
     prior: { n: priors.length, brier: brier(priors) },
-    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value) },
+    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value), valueByMarket: byMarket(picks.value) },
   };
 }
 

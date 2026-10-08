@@ -4,7 +4,7 @@ import { buildAdvice, CATEGORIES } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
-import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches } from './journal.js';
+import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -544,7 +544,9 @@ function oddsCell(id, label, mem) {
     <button type="button" class="link" data-link="${esc(id)}" data-label="${esc(label)}" title="Lier à la cote de mon bookmaker">🔗</button>`;
 }
 
-const TAGS = { play: 'À JOUER', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI',
+// « FAVORI » : sélection probable sans cote connue (information, pas un pari tant que la cote
+// n'atteint pas le minimum) ; « À JOUER » : cote réelle suffisante.
+const TAGS = { play: 'FAVORI', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI',
   suspended: 'ATTENDRE', stale: 'ATTENDRE', nobook: 'PAS SUR STAKE', suspect: 'À VÉRIFIER' };
 
 // Stake connecté : un pari n'est conseillé que s'il est réellement ouvert chez Stake.
@@ -600,6 +602,23 @@ function adviceText(r) {
   }
 }
 
+// Nouveau pari « À JOUER » sur une cote Stake : bip court (les cotes ne restent ouvertes que
+// quelques secondes entre les rounds). Une seule fois par pari et par round.
+let audio = null;
+function alertNew(rows, mem) {
+  mem.alerted ??= new Set();
+  const fresh = rows.filter((r) => r.status === 'value' && mem.live?.[r.id]?.auto && !mem.alerted.has(`${r.id}|${mem.lastRound}`));
+  for (const r of fresh) mem.alerted.add(`${r.id}|${mem.lastRound}`);
+  if (!fresh.length || settings.sound === false) return;
+  try {
+    audio ??= new AudioContext();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; g.gain.setValueAtTime(0.15, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35);
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.35);
+  } catch { /* son indisponible */ }
+}
+
 function renderAdvice(picks, list, conf, mem) {
   $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
   if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
@@ -616,6 +635,7 @@ function renderAdvice(picks, list, conf, mem) {
     : books.size ? `Page${books.size > 1 ? 's' : ''} Stake ouverte${books.size > 1 ? 's' : ''} (${esc([...books.values()].map((b) => b.fixture?.name).filter(Boolean).join(', ') || 'aucun match')}) : pas ce match. Ouvrez ce match sur Stake.`
       : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.')
     );
+  alertNew(rows, mem);
   setHTML($('advice'), rows.map((r) => {
     const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
@@ -740,6 +760,7 @@ function process(id, src) {
   fillSeries(m, mem, src.matchId);
   mem.lastMapNumber = m.mapNumber;
   const res = analyze(m);
+  mem.lastRound = res.round;
 
   const pMap = res.over ? (res.over === 'A' ? 1 : 0) : res.pMap;
   const lbl = `R${res.round} ${m.scoreA}-${m.scoreB}`;
@@ -775,6 +796,9 @@ function process(id, src) {
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
     backfill(journal, src.matchId, src.meta?.maps);
+    // Cote Stake fraîche au round suivant un pari VALUE (cote battue ou non).
+    const live = Object.fromEntries(Object.entries(odds).filter(([id]) => mem.live?.[id]?.auto));
+    trackNext(journal, jkey, live, res.round);
     logPicks(journal, jkey, shownPicks(picks), { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
   }
@@ -819,6 +843,7 @@ $('btnSettings').addEventListener('click', () => {
   $('setOdds1').value = settings.odds1 ? dec(settings.odds1) : '';
   $('setOdds2').value = settings.odds2 ? dec(settings.odds2) : '';
   $('setEdge').value = settings.edge ?? 4;
+  $('setSound').checked = settings.sound !== false;
   renderJournal();
   $('settings').showModal();
 });
@@ -828,6 +853,7 @@ $('settings').addEventListener('close', () => {
   settings.odds1 = num('setOdds1');
   settings.odds2 = num('setOdds2');
   settings.edge = Math.max(1, Math.min(20, num('setEdge') ?? 4));
+  settings.sound = $('setSound').checked;
   saveSettings();
   render();
 });
@@ -854,8 +880,20 @@ function renderJournal() {
   if (sm.map.vsHltv?.n >= 10) lines.push(`Map : ProBet ${dec(sm.map.vsHltv.probet, 3)} contre HLTV ${dec(sm.map.vsHltv.hltv, 3)} (plus bas = meilleur).`);
   const vs = sm.vsStake;
   if (vs?.maps >= 3) lines.push(`Contre Stake (${vs.maps} maps) : ProBet ${dec(vs.probet, 3)}, cotes Stake ${dec(vs.stake, 3)}, combiné ${dec(vs.mixed, 3)} · poids du modèle utilisé ${pct(vs.maps >= 5 ? vs.w : MODEL_WEIGHT)}.`);
-  const pk = (x, name) => x.n ? `${name} : ${x.won}/${x.n} gagnés (${pct(x.won / x.n)}, annoncé ${pct(x.expected)})${x.units != null ? `, ${x.units >= 0 ? '+' : ''}${dec(x.units, 1)} unités` : ''}.` : null;
-  for (const l of [pk(sm.picks.lean, 'Tendances'), pk(sm.picks.value, 'Paris VALUE')]) if (l) lines.push(l);
+  const sign = (x, d = 1) => `${x >= 0 ? '+' : ''}${dec(x, d)}`;
+  const pk = (x, name) => {
+    if (!x.n) return null;
+    let t = `<b>${name}</b> : ${x.won}/${x.n} gagnés (${pct(x.won / x.n)}, annoncé ${pct(x.expected)})`;
+    if (x.avgOdds) t += ` · cote moyenne ${dec(x.avgOdds)} → il faut ${pct(x.breakEven)} pour ne pas perdre · <b>${sign(x.units)} unités</b>`;
+    if (x.staked != null) t += ` (${sign(x.staked * 100)} % de bankroll à la mise conseillée)`;
+    if (x.atMin != null) t += ` · cote minimale moyenne ${dec(x.avgMin)} : jouées à ce prix, ${sign(x.atMin)} unités. Ce sont des favoris : ils gagnent souvent mais paient peu`;
+    if (x.beat) t += ` · cote battue ${pct(x.beat.share)} des fois (${sign(x.beat.clv * 100)} % en moyenne, sur ${x.beat.n})`;
+    return t + '.';
+  };
+  for (const l of [pk(sm.picks.value, 'Paris VALUE'), pk(sm.picks.lean, 'Tendances (favoris sans cote)')]) if (l) lines.push(l);
+  const NAMES = { hcp: 'handicap', map: 'map', tot: 'total', ot: 'prolongation', series: 'match' };
+  const mk = Object.entries(sm.picks.valueByMarket || {}).map(([k, x]) => `${NAMES[k]} ${x.won}/${x.n} ${sign(x.units ?? 0)} u.`);
+  if (mk.length) lines.push(`VALUE par marché : ${mk.join(' · ')}.`);
   if (sm.maps && sm.finished < 10) lines.push('Les chiffres deviennent parlants après une dizaine de maps terminées.');
   $('journalSummary').innerHTML = lines.map((l) => `<span>${l}</span>`).join('');
 }

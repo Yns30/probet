@@ -15,7 +15,7 @@ const rowsFor = (st, list, odds = {}) => buildAdvice(st, { list, odds, picks: re
 test('conseil : toujours les mêmes lignes, dans le même ordre', () => {
   for (const pMap of [0.55, 0.75, 0.95]) {
     const rows = rowsFor({}, market(pMap));
-    assert.deepEqual(rows.map((r) => r.key), ['map', 'hcp', 'tot', 'ot']);
+    assert.deepEqual(rows.map((r) => r.key), ['hcp', 'map', 'tot', 'ot']);
   }
 });
 
@@ -48,4 +48,16 @@ test('handicap et total sans ligne intéressante : ligne présente, sans sélect
   const tot = rowsFor({}, market(0.55)).find((r) => r.key === 'tot');
   assert.equal(tot.status, 'none');
   assert.equal(tot.id, null);
+});
+
+test('handicap sans pari rentable : meilleure ligne Stake et cote à attendre', () => {
+  const mk = (id, p) => ({ id, group: 'Map 1 — handicap', label: id, p, sd: 0 });
+  const list = [mk('hcp-2.5:A', 0.55), mk('hcp-2.5:B', 0.45), mk('hcp3.5:A', 0.8), mk('hcp3.5:B', 0.2)];
+  const odds = { 'hcp-2.5:A': 1.7, 'hcp-2.5:B': 2.0, 'hcp3.5:A': 1.15, 'hcp3.5:B': 5 };
+  const row = buildAdvice({}, { list, picks: [], odds }).find((r) => r.key === 'hcp');
+  assert.equal(row.status, 'low');
+  assert.equal(row.id, 'hcp-2.5:A'); // 0,55 × 1,70 = 0,935 : la plus proche d'un pari rentable
+  assert.ok(row.min > 1.8 && row.min < 1.95);
+  // Sans cote : pas de ligne choisie au hasard.
+  assert.equal(buildAdvice({}, { list, picks: [], odds: {} }).find((r) => r.key === 'hcp').status, 'none');
 });

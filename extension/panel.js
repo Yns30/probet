@@ -184,6 +184,7 @@ function applyBooks(mem, m, matchId) {
   }
   // Lignes proposées par le bookmaker : ProBet calcule exactement celles-là.
   mem.bookLines = bookLines(got);
+  mem.bookHit = hit ? { fixture: hit.fixture, homeSide: hit.homeSide } : null;
   const fx = hit?.fixture;
   const last = fx ? Math.max(0, ...Object.values(fx.src || {})) : 0;
   const shut = fx && pick.map != null ? bookClosure(fx, pick.map) : { closed: false, openMaps: [] };
@@ -583,7 +584,7 @@ function adviceText(r) {
     case 'sure':
       return `Très probable, mais la cote sera sûrement trop basse : seulement si elle atteint <b>${dec(r.min)}</b>`;
     case 'low':
-      return `Votre cote ${dec(r.odds)} est trop basse : il faut au moins <b>${dec(r.min)}</b>`;
+      return `Cote ${dec(r.odds)} trop basse : il faut au moins <b>${dec(r.min)}</b>`;
     case 'wait':
       return `Trop incertain : ne pariez pas sur ce marché pour l'instant`;
     case 'suspended':
@@ -608,6 +609,7 @@ function renderAdvice(picks, list, conf, mem) {
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
   setHTML($('bookState'), (mem.book
     ? `<span class="ok">● Cotes ${esc(mem.book.host)}</span> · ${esc(mem.book.name)}${
+      mem.book.map ? ` · <b>map ${mem.book.map}</b>` : ''}${
       mem.book.age != null ? ` · mise à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
       mem.book.mapNote ? ` · <span class="warn">${esc(mem.book.mapNote)}</span>` : ''}
       <div class="srcs">${sourcesLine(mem.book.src)}</div>`
@@ -676,6 +678,25 @@ function renderFeed(src) {
     .map((l) => `<li class="${l.type === 'RoundEnd' ? 'round' : ''}">${esc(l.text)}</li>`).join('');
 }
 
+// Score de la série inconnu (HLTV ne met pas à jour les scores des maps finies sans recharger
+// la page) : maps gagnées lues chez Stake, sinon dans le journal (maps de ce match déjà suivies).
+function fillSeries(m, mem, matchId) {
+  if (!m.mapsUnknown) return;
+  const total = m.mapsA + m.mapsB + m.mapsUnknown;
+  const h = mem.bookHit, sc = h?.fixture?.score;
+  if (sc && Number.isInteger(sc.home) && sc.home + sc.away === total) {
+    [m.mapsA, m.mapsB] = h.homeSide === 'A' ? [sc.home, sc.away] : [sc.away, sc.home];
+    m.mapsUnknown = 0;
+    return;
+  }
+  let a = 0, b = 0;
+  for (const e of Object.values(journal.maps)) {
+    if (String(e.matchId) !== String(matchId) || !e.final || e.map === m.map) continue;
+    if (e.final.w === 'A') a++; else b++;
+  }
+  if (a + b === total) { m.mapsA = a; m.mapsB = b; m.mapsUnknown = 0; }
+}
+
 // Poids du modèle face aux cotes Stake : appris sur les maps du journal, recalculé au plus
 // une fois par minute.
 let weightCache = { at: 0, w: MODEL_WEIGHT };
@@ -716,6 +737,7 @@ function process(id, src) {
   expireLive(mem);
   const m = toMatch(src.scoreboard, meta, mem);
   applyBooks(mem, m, src.matchId);
+  fillSeries(m, mem, src.matchId);
   mem.lastMapNumber = m.mapNumber;
   const res = analyze(m);
 

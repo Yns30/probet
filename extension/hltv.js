@@ -181,16 +181,28 @@ export function bestOfFrom(text) {
 }
 
 // maps : [{ name, s1, s2 }] (s1 = score de l'équipe 1 de la page)
+// Numéro de la map en cours : sa place dans la liste des maps du match (connue dès le veto).
+// Les scores des maps finies ne sont pas mis à jour par HLTV sans recharger la page : les
+// compter donnait « map 1 » pendant les maps 2 et 3. unknown : maps déjà jouées dont le
+// vainqueur n'est pas (encore) affiché.
 export function seriesState(maps, liveMap) {
   let mapsA = 0, mapsB = 0;
-  for (const mp of maps || []) {
+  // Même nom plusieurs fois (démo) : la première non terminée, sinon la dernière.
+  const same = (maps || []).map((mp, i) => [mp, i]).filter(([mp]) => liveMap && normalizeMap(mp.name) === normalizeMap(liveMap));
+  const open = same.find(([mp]) => !(Number.isInteger(mp.s1) && Number.isInteger(mp.s2) && mapWinner(mp.s1, mp.s2)));
+  const idx = (open ?? same[same.length - 1])?.[1] ?? -1;
+  for (const [i, mp] of (maps || []).entries()) {
+    if (idx >= 0 && i > idx) break;
     if (!Number.isInteger(mp.s1) || !Number.isInteger(mp.s2)) continue;
-    if (liveMap && normalizeMap(mp.name) === normalizeMap(liveMap) && !mapWinner(mp.s1, mp.s2)) continue;
+    // Map affichée par le scorebot : comptée seulement une fois terminée.
+    if ((i === idx || idx < 0) && liveMap && normalizeMap(mp.name) === normalizeMap(liveMap) && !mapWinner(mp.s1, mp.s2)) continue;
     const w = mapWinner(mp.s1, mp.s2);
     if (w === 'A') mapsA++;
     else if (w === 'B') mapsB++;
   }
-  return { mapsA, mapsB, mapNumber: mapsA + mapsB + 1 };
+  const mapNumber = idx >= 0 ? idx + 1 : mapsA + mapsB + 1;
+  const done = idx >= 0 && mapWinner(maps[idx].s1, maps[idx].s2) ? 1 : 0;
+  return { mapsA, mapsB, mapNumber, unknown: Math.max(0, mapNumber - 1 + done - mapsA - mapsB) };
 }
 
 // Cotes de vainqueur du match (plusieurs bookmakers) → probabilité équipe 1, marge retirée.
@@ -418,7 +430,7 @@ export function toMatch(sb, meta = {}, mem = {}) {
     buyA = predictBuy(pA); buyB = predictBuy(pB);
   }
 
-  const { mapsA, mapsB, mapNumber } = seriesState(meta.maps, sb.mapName);
+  const { mapsA, mapsB, mapNumber, unknown: mapsUnknown } = seriesState(meta.maps, sb.mapName);
   const bestOf = meta.bestOf || 1;
   const pre = pagePrior(meta, sb.mapName, bestOf);
   const prior = pre ? { ...priorD(pre.pMap, sb.mapName), sd: pre.fromOdds ? CAL.priorSdOdds : CAL.priorSdPage } : null;
@@ -444,7 +456,7 @@ export function toMatch(sb, meta = {}, mem = {}) {
     facts: [...(sb.matchFacts || []), ...(sb.ctTeamFacts || []), ...(sb.tTeamFacts || [])]
       .map((f) => (typeof f === 'string' ? f : f?.text || f?.description || null)).filter(Boolean),
     buyA, buyB, nextBuy: nextRound,
-    rounds, hist, bestOf, mapsA, mapsB, mapNumber,
+    rounds, hist, bestOf, mapsA, mapsB, mapNumber, mapsUnknown,
     pre, prior, seriesObs: seriesObs(meta.maps, sb.mapName),
     nextEcon: live && !rounds.some((o) => o.synthetic) ? nextBuys(pA, pB, rounds, current + 1) : null,
     players: { A: pA, B: pB }, playersA: live ? pA : null, playersB: live ? pB : null,

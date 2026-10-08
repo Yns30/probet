@@ -72,6 +72,10 @@
     if (!fx || !es) return;
     if (es.matchStatus != null) { fx.matchStatus = es.matchStatus; fx.mapNumber = mapNumberOf(es.matchStatus) ?? fx.mapNumber; }
     if (es.homeScore != null) fx.score = { home: es.homeScore, away: es.awayScore };
+    // Statut sans numéro (« Pause »…) pendant une map : maps gagnées + 1.
+    if (es.matchStatus != null && mapNumberOf(es.matchStatus) == null && es.scoreboard?.homeWonRounds != null && fx.score) {
+      fx.mapNumber = fx.score.home + fx.score.away + 1;
+    }
     const sb = es.scoreboard;
     if (sb && sb.homeWonRounds != null) fx.rounds = { home: sb.homeWonRounds, away: sb.awayWonRounds };
     else if ('scoreboard' in es) fx.rounds = null; // entre deux maps : plus de score en cours

@@ -101,8 +101,14 @@ test('économie', () => {
 });
 
 test('série, cotes, format, fil', () => {
-  assert.deepEqual(seriesState([{ name: 'Nuke', s1: 13, s2: 9 }, { name: 'Mirage', s1: 4, s2: 7 }], 'de_mirage'), { mapsA: 1, mapsB: 0, mapNumber: 2 });
-  assert.deepEqual(seriesState([{ name: 'Nuke', s1: 10, s2: 13 }]), { mapsA: 0, mapsB: 1, mapNumber: 2 });
+  assert.deepEqual(seriesState([{ name: 'Nuke', s1: 13, s2: 9 }, { name: 'Mirage', s1: 4, s2: 7 }], 'de_mirage'), { mapsA: 1, mapsB: 0, mapNumber: 2, unknown: 0 });
+  assert.deepEqual(seriesState([{ name: 'Nuke', s1: 10, s2: 13 }]), { mapsA: 0, mapsB: 1, mapNumber: 2, unknown: 0 });
+  // Cas réel (Nemesis - SINNERS) : page HLTV jamais rechargée, scores des maps finies absents.
+  const maps = [{ name: 'Dust2', s1: null, s2: null }, { name: 'Cache', s1: null, s2: null }, { name: 'Ancient', s1: null, s2: null }];
+  assert.deepEqual(seriesState(maps, 'de_cache'), { mapsA: 0, mapsB: 0, mapNumber: 2, unknown: 1 });
+  assert.equal(seriesState(maps, 'de_ancient').mapNumber, 3);
+  // HLTV affiche encore la fin de la map 1 (13-8) : map 1, terminée, comptée dans la série.
+  assert.deepEqual(seriesState([{ name: 'Dust2', s1: 13, s2: 8 }, { name: 'Cache', s1: null, s2: null }], 'de_dust2'), { mapsA: 1, mapsB: 0, mapNumber: 1, unknown: 0 });
   assert.equal(oddsToProb([]), null);
   assert.ok(Math.abs(oddsToProb([[1.9, 1.9]]) - 0.5) < 1e-9);
   assert.equal(bestOfFrom('Best of 3 (LAN)\n* Playoffs'), 3);

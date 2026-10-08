@@ -57,7 +57,7 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 
 ## Comment parier avec ProBet
 
-La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :
+La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (handicap en premier, c'est le marché le plus fiable du journal ; puis vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :
 
 | Statut | Signification | Que faire |
 |---|---|---|
@@ -69,6 +69,11 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 2. Comparez sa cote à la **cote minimale** de ProBet : au-dessus, le pari est rentable à long terme ; en dessous, passez.
 3. Pour être sûr, tapez la cote du bookmaker dans la case **Cote** de la ligne : ProBet affiche l'avantage et la mise conseillée, ou « pas de pari ».
 4. Mises petites et fixes (1 à 2 % de la bankroll), ou celle indiquée après saisie de la cote. Ne cumulez pas « vainqueur de la map » et « handicap » sur la même équipe : ils gagnent ou perdent ensemble. Quand plusieurs paris VALUE sont affichés, la mise totale conseillée est plafonnée à 5 % de la bankroll.
+
+### Handicap prioritaire et numéro de map
+
+- **Handicap en tête.** Quand aucune ligne n'est rentable, ProBet montre quand même la ligne Stake la plus proche d'un bon pari et la cote à attendre.
+- **Numéro de la map** (1, 2 ou 3) : c'est la place de la map en cours dans la liste des maps du match sur HLTV, et non plus le nombre de maps terminées. HLTV ne met pas à jour ces scores sans recharger la page, ce qui donnait « map 1 » pendant les maps 2 et 3. Le score de la série (maps gagnées) est alors pris chez Stake, sinon dans le journal. La ligne Stake du panneau indique la map dont les cotes sont utilisées. Tous les onglets Stake (Principal, Map 1, Map 2, Map 3) sont lus, quel que soit celui affiché ; l'onglet Joueurs n'est pas utilisé.
 
 ### Cotes fraîches uniquement
 

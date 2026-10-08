@@ -11,8 +11,10 @@ import { PICK, evaluateBet } from './engine.js';
 export const MAX_EXPOSURE = 0.05;
 
 export const CATEGORIES = [
+  // Handicap en tête : le marché le plus fiable du journal (81 % gagnés pour 82 % annoncé ;
+  // paris VALUE les plus rentables).
+  { key: 'hcp', label: () => 'Handicap (écart de rounds) · prioritaire', test: (id) => id.startsWith('hcp') },
   { key: 'map', label: () => 'Vainqueur de la map', test: (id) => id.startsWith('map:') },
-  { key: 'hcp', label: () => 'Handicap (écart de rounds)', test: (id) => id.startsWith('hcp') },
   { key: 'tot', label: () => 'Total de rounds', test: (id) => id.startsWith('tot') },
   { key: 'ot', label: () => 'Prolongation', test: (id) => id.startsWith('ot:') },
   { key: 'series', label: () => 'Vainqueur du match', test: (id) => id.startsWith('series:') },
@@ -37,8 +39,14 @@ export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04 }) {
     }
     // Pas de pari retenu : on montre quand même la sélection favorite et pourquoi on ne joue pas.
     if (cat.key === 'hcp' || cat.key === 'tot') {
-      // Plusieurs lignes possibles : sans ligne intéressante, on ne choisit pas au hasard.
-      rows.push({ key: cat.key, label, id: null, status: 'none' });
+      // Plusieurs lignes : on montre celle dont la cote du bookmaker est la plus proche d'un
+      // pari rentable, avec la cote à attendre. Sans cote, on ne choisit pas au hasard.
+      const priced = items.filter((m) => odds[m.id] > 1 && m.p >= 0.35);
+      if (!priced.length) { rows.push({ key: cat.key, label, id: null, status: 'none' }); continue; }
+      const pcOf = (m) => Math.max(1e-3, m.p - PICK.kValue * (m.sd || 0));
+      const best = priced.reduce((a, b) => (pcOf(b) * odds[b.id] > pcOf(a) * odds[a.id] ? b : a));
+      rows.push({ key: cat.key, label, id: best.id, sel: best.label, p: best.p, status: 'low',
+        min: (1 / pcOf(best)) * (1 + minEdge), odds: odds[best.id], pm: best.pModel, pk: best.pMkt });
       continue;
     }
     // Favori stable : la sélection déjà affichée reste tant qu'elle n'est pas nettement passée sous 50 %.

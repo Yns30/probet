@@ -216,14 +216,16 @@
     };
   }
 
-  let pending = null;
+  // Envoi au panneau sans minuteur : dans un onglet en arrière-plan, Chrome retarde les
+  // minuteurs jusqu'à une minute (le panneau croyait alors ne plus rien recevoir). Les messages
+  // du scorebot arrivent plusieurs fois par seconde : l'envoi se fait sur l'un d'eux, au plus
+  // toutes les 250 ms ; le panneau redemande aussi l'état de chaque onglet régulièrement.
+  let lastSent = 0;
   function push() {
     state.updatedAt = Date.now();
-    if (pending) return;
-    pending = setTimeout(() => {
-      pending = null;
-      chrome.runtime.sendMessage({ type: 'probet:state', state }).catch(() => {});
-    }, 250);
+    if (Date.now() - lastSent < 250) return;
+    lastSent = Date.now();
+    chrome.runtime.sendMessage({ type: 'probet:state', state }).catch(() => {});
   }
 
   window.addEventListener('message', (e) => {

@@ -345,10 +345,13 @@ if (hasChrome) {
 // caché). Onglet ouvert avant l'installation ou la mise à jour de l'extension : les scripts de
 // lecture y sont injectés, sans recharger la page.
 const STAKE_URLS = (hasChrome && chrome.runtime.getManifest().content_scripts?.find((c) => c.js.includes('stake.js'))?.matches) || [];
+// Onglets suivis (HLTV et Stake) : Chrome ne doit pas les décharger pour gagner de la mémoire.
+const keepTab = (t) => { if (t.autoDiscardable !== false) chrome.tabs.update(t.id, { autoDiscardable: false }).catch(() => {}); };
 async function wakeBooks() {
   if (!hasChrome || !STAKE_URLS.length) return;
   const tabs = await chrome.tabs.query({ url: STAKE_URLS }).catch(() => []);
   for (const t of tabs) {
+    keepTab(t);
     if (t.discarded || t.status !== 'complete') continue;
     const ok = await chrome.tabs.sendMessage(t.id, { type: 'probet:book-get' }).catch(() => null);
     if (ok) continue;
@@ -363,6 +366,7 @@ async function discover() {
   if (!hasChrome) return;
   const tabs = await chrome.tabs.query({ url: 'https://www.hltv.org/matches/*' });
   for (const t of tabs) {
+    keepTab(t);
     try {
       const state = await chrome.tabs.sendMessage(t.id, { type: 'probet:get' });
       if (state) onState(t.id, state);
@@ -832,7 +836,7 @@ function render() {
   }
   $('main').hidden = false; $('empty').hidden = true;
   const age = src.lastFrameAt ? Math.round((Date.now() - src.lastFrameAt) / 1000) : null;
-  if (age != null && age > 90) status('paused', `Pas de nouvelle donnée depuis ${age} s (pause, mi-temps ?)`);
+  if (age != null && age > 90) status('paused', `Pas de nouvelle donnée depuis ${age} s : pause ou mi-temps, ou onglet HLTV mis en veille par Chrome (voir « En cas de problème »).`);
   else status('live', `En direct · ${label(src)}`);
 
   const { mem, m, res, list, conf, picks } = process(selected, src);
@@ -966,13 +970,16 @@ settlePending();
 setInterval(settlePending, 10 * 60000);
 await discover();
 wakeBooks();
-setInterval(wakeBooks, 15000);
+setInterval(wakeBooks, 5000);
+setInterval(discover, 10000);
+// Tous les matchs HLTV ouverts (pas seulement celui affiché) sont redemandés toutes les 3 s : la
+// réponse ne dépend pas des minuteurs de l'onglet, elle arrive même en arrière-plan.
 setInterval(() => {
-  // Rafraîchit les méta-données (maps, cotes) et l'indicateur d'activité.
-  if (hasChrome && typeof selected === 'number') {
-    chrome.tabs.sendMessage(selected, { type: 'probet:get' }).then((s) => s && onState(selected, s)).catch(() => {});
-  } else {
-    render();
+  if (!hasChrome) { render(); return; }
+  for (const id of sources.keys()) {
+    if (typeof id !== 'number') continue;
+    chrome.tabs.sendMessage(id, { type: 'probet:get' }).then((s) => s && onState(id, s)).catch(() => {});
   }
-}, 5000);
+  if (typeof selected !== 'number') render();
+}, 3000);
 if (new URLSearchParams(location.search).has('demo')) startDemo();

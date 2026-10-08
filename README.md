@@ -176,6 +176,8 @@ Le score utilisé est l'écart quadratique moyen (score de Brier) : 0,25 corresp
 
 ## En cas de problème
 
+- **« Pas de nouvelle donnée » sur un match en arrière-plan, qui repart quand on clique sur l'onglet** : Chrome met en veille les onglets cachés pour économiser la mémoire et la batterie. Dans Chrome, ouvrez `chrome://settings/performance` et, sous **« Toujours garder ces sites actifs »**, ajoutez `hltv.org` et `stake.com`. ProBet demande aussi lui-même à Chrome de ne pas décharger ces onglets, et redemande les données de chaque match toutes les 3 s. Suivre plusieurs matchs en même temps fonctionne alors sans cliquer.
+
 - **« En attente des données live »** : le match n'a peut-être pas commencé. Sinon, rechargez la page HLTV : l'extension doit être chargée avant le scoreboard.
 - **Une donnée semble fausse ou rien ne s'affiche :** dans **Réglages**, cliquez sur **Copier le diagnostic**, puis collez-le dans une conversation. Il contient ce que ProBet a reçu de la page, de quoi l'adapter si HLTV change sa structure.
 

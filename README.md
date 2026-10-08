@@ -73,6 +73,7 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 
 ### Handicap prioritaire et numéro de map
 
+- **Une ligne par round.** Pour le handicap et le total, la ligne conseillée est choisie dans les 4 secondes qui suivent la mise à jour des cotes après le round, puis elle ne change plus avant le round suivant (« Ligne fixée jusqu'à la fin du round »). Si sa cote baisse, la même ligne passe en « PAS DE PARI » au lieu d'être remplacée par une autre. D'un round à l'autre, la ligne précédente est gardée si elle reste presque aussi bonne.
 - **Handicap en tête.** Quand aucune ligne n'est rentable, ProBet montre quand même la ligne Stake la plus proche d'un bon pari et la cote à attendre.
 - **Numéro de la map** (1, 2 ou 3) : c'est la place de la map en cours dans la liste des maps du match sur HLTV, et non plus le nombre de maps terminées. HLTV ne met pas à jour ces scores sans recharger la page, ce qui donnait « map 1 » pendant les maps 2 et 3. Le score de la série (maps gagnées) est alors pris chez Stake, sinon dans le journal. La ligne Stake du panneau indique la map dont les cotes sont utilisées. Tous les onglets Stake (Principal, Map 1, Map 2, Map 3) sont lus, quel que soit celui affiché ; l'onglet Joueurs n'est pas utilisé.
 

@@ -21,14 +21,29 @@ export const CATEGORIES = [
 ];
 
 // state : objet persistant par match (sélection affichée par marché, pour l'hystérésis).
-export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04 }) {
+// Marchés à plusieurs lignes (handicap, total) : la ligne affichée est verrouillée pour le
+// round. Après chaque round, Stake recalcule ses lignes une par une : prendre à chaque fois la
+// meilleure faisait passer le conseil de −4,5 à −3,5 puis −2,5 en quelques secondes. On laisse
+// SETTLE ms pour que les cotes se stabilisent, puis la ligne ne change plus avant le round
+// suivant. D'un round à l'autre, la ligne précédente est gardée si elle reste presque aussi bonne.
+export const LINE_LOCK = { settle: 4000, keep: 0.05 };
+const MULTI = new Set(['hcp', 'tot']);
+
+export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04, round = null, now = Date.now() }) {
   state.fav ??= {};
+  state.lock ??= {};
   const rows = [];
+  const pcOf = (m) => Math.max(1e-3, m.p - PICK.kValue * (m.sd || 0));
   for (const cat of CATEGORIES) {
     const items = list.filter((m) => cat.test(m.id));
     if (!items.length) continue;
     const label = cat.label(items[0]);
     const inCat = picks.filter((p) => cat.test(p.id));
+    if (MULTI.has(cat.key) && round != null) {
+      const row = lockedLine(state, cat.key, { items, inCat, odds, round, now, pcOf, minEdge });
+      rows.push(row ? { key: cat.key, label, ...row } : { key: cat.key, label, id: null, status: 'none' });
+      continue;
+    }
     const pick = inCat.find((p) => p.kind === 'value') ?? inCat[0];
     if (pick) {
       state.fav[cat.key] = pick.id;
@@ -70,4 +85,40 @@ export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04 }) {
   const total = rows.reduce((s, r) => s + (r.status === 'value' ? r.stake || 0 : 0), 0);
   if (total > MAX_EXPOSURE) for (const r of rows) if (r.status === 'value') r.stake *= MAX_EXPOSURE / total;
   return rows;
+}
+
+// Ligne choisie pour un marché à plusieurs lignes, verrouillée pour le round (voir LINE_LOCK).
+function lockedLine(state, key, { items, inCat, odds, round, now, pcOf, minEdge }) {
+  const has = (id) => id && items.some((m) => m.id === id);
+  const values = inCat.filter((p) => p.kind === 'value'); // triés par avantage décroissant
+  const ev = (id) => values.find((v) => v.id === id)?.ev;
+  const lock = state.lock[key];
+  const settled = lock && lock.round === round && now - lock.at >= LINE_LOCK.settle;
+  let id = null;
+  if (settled && has(lock.id)) id = lock.id;
+  else {
+    const prev = has(lock?.id) ? lock.id : null;
+    const best = values[0];
+    if (prev && ev(prev) != null && (!best || ev(prev) >= best.ev - LINE_LOCK.keep)) id = prev;
+    else if (best) id = best.id;
+    else if (prev && odds[prev] > 1) id = prev;
+    else {
+      const lean = inCat.find((p) => p.kind === 'lean');
+      const priced = items.filter((m) => odds[m.id] > 1 && m.p >= 0.35);
+      if (lean) id = lean.id;
+      else if (priced.length) id = priced.reduce((a, b) => (pcOf(b) * odds[b.id] > pcOf(a) * odds[a.id] ? b : a)).id;
+    }
+    if (id) state.lock[key] = { id, round, at: lock?.round === round && lock.id === id ? lock.at : now };
+  }
+  if (!id) return null;
+  const v = values.find((x) => x.id === id);
+  if (v) {
+    return { id, sel: v.label, p: v.p, status: 'value', min: v.target, odds: v.odds ?? odds[id] ?? null, ev: v.ev,
+      stake: v.stake, frozen: v.frozen, now: v.now, pm: v.pModel, pk: v.pMkt, locked: true };
+  }
+  const m = items.find((x) => x.id === id);
+  const lean = inCat.find((p) => p.id === id && p.kind === 'lean');
+  const min = lean?.target ?? (1 / pcOf(m)) * (1 + minEdge);
+  const status = odds[id] > 1 ? 'low' : lean ? 'play' : 'wait';
+  return { id, sel: m.label, p: m.p, status, min, odds: odds[id] ?? null, pm: m.pModel, pk: m.pMkt, frozen: lean?.frozen, locked: true };
 }

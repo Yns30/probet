@@ -1,6 +1,6 @@
 import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, oppositeOf, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
-import { buildAdvice, CATEGORIES } from './advice.js';
+import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog } from './hltv.js';
 import { createDemoMatch } from './demo.js';
@@ -624,7 +624,7 @@ function renderAdvice(picks, list, conf, mem) {
   if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
   mem.advice ??= {};
   const src = sources.get(selected);
-  const rows = bookStatus(buildAdvice(mem.advice, { list, picks, odds: mem.fresh ?? mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
+  const rows = bookStatus(mem.rows ?? buildAdvice(mem.advice, { list, picks, odds: mem.fresh ?? mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
   if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
   setHTML($('bookState'), (mem.book
     ? `<span class="ok">● Cotes ${esc(mem.book.host)}</span> · ${esc(mem.book.name)}${
@@ -643,7 +643,7 @@ function renderAdvice(picks, list, conf, mem) {
     return `<li class="adv s-${r.status}${go ? ' go' : ''}">
       <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
       ${r.id ? `<div class="adv-line"><span class="adv-sel">${esc(r.sel)}</span><span class="adv-p">${pct(r.p)}</span></div>` : ''}
-      <div class="adv-how">${adviceText(r)}</div>${mixNote(r)}${frozen}
+      <div class="adv-how">${adviceText(r)}</div>${mixNote(r)}${frozen}${r.locked && r.status === 'value' ? '<div class="adv-note">Ligne fixée jusqu’à la fin du round</div>' : ''}
       ${r.id ? `<div class="adv-odds">${oddsCell(r.id, `${r.sel} — ${r.label}`, mem)}</div>` : ''}
     </li>`;
   }).join(''));
@@ -728,17 +728,6 @@ function modelWeight() {
   return weightCache.w;
 }
 
-// Paris réellement conseillés : un seul par marché (comme le tableau « Que jouer ? »). Noter
-// toutes les lignes d'un même avis (map, 6 handicaps, 4 totaux…) compterait 10 fois le même pari.
-function shownPicks(picks) {
-  const out = [];
-  for (const cat of CATEGORIES) {
-    const inCat = picks.filter((p) => cat.test(p.id));
-    const p = inCat.find((x) => x.kind === 'value') ?? inCat[0];
-    if (p) out.push(p);
-  }
-  return out;
-}
 const isStale = (l, mem) => Boolean(l?.auto && l.chg && mem.roundEnd && l.chg < mem.roundEnd);
 function freshOdds(mem) {
   const out = { ...mem.odds };
@@ -791,6 +780,10 @@ function process(id, src) {
     phase: m.phase, round: m.round, mapKey: mem.mapKey,
     action: m.phase === 'bomb_planted' || (m.phase === 'live' && (m.aliveA < 5 || m.aliveB < 5)),
   });
+  // Tableau « Que jouer ? » calculé ici (lignes verrouillées pour le round) : le journal note
+  // exactement les paris affichés.
+  mem.advice ??= {};
+  mem.rows = buildAdvice(mem.advice, { list, picks, odds, minEdge: (settings.edge || 4) / 100, round: res.round });
   if (src.matchId && src.matchId !== 'demo') {
     const jkey = mapKeyOf(src.matchId, m.map || key);
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
@@ -799,7 +792,8 @@ function process(id, src) {
     // Cote Stake fraîche au round suivant un pari VALUE (cote battue ou non).
     const live = Object.fromEntries(Object.entries(odds).filter(([id]) => mem.live?.[id]?.auto));
     trackNext(journal, jkey, live, res.round);
-    logPicks(journal, jkey, shownPicks(picks), { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
+    const shown = new Set(mem.rows.filter((r) => r.status === 'value' || r.status === 'play').map((r) => r.id));
+    logPicks(journal, jkey, picks.filter((p) => shown.has(p.id)), { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
   }
   return { mem, m, res, list, conf, picks };

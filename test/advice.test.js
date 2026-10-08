@@ -61,3 +61,25 @@ test('handicap sans pari rentable : meilleure ligne Stake et cote à attendre', 
   // Sans cote : pas de ligne choisie au hasard.
   assert.equal(buildAdvice({}, { list, picks: [], odds: {} }).find((r) => r.key === 'hcp').status, 'none');
 });
+
+test('handicap : ligne verrouillée pour le round (cas réel −4,5 → −3,5 → −2,5)', () => {
+  const mk = (id, p) => ({ id, group: 'Map 1 — handicap', label: id, p, sd: 0 });
+  const list = [mk('hcp-4.5:A', 0.3), mk('hcp-4.5:B', 0.7), mk('hcp-3.5:A', 0.38), mk('hcp-3.5:B', 0.62), mk('hcp-2.5:A', 0.47), mk('hcp-2.5:B', 0.53)];
+  const st = {};
+  const at = (odds, now, round = 14) => buildAdvice(st, { list, odds, picks: recommend(list, odds, 1, { max: 99 }), round, now })
+    .find((r) => r.key === 'hcp');
+  // Juste après le round : seule la ligne −4,5 a déjà sa nouvelle cote.
+  let r = at({ 'hcp-4.5:A': 10 }, 0);
+  assert.equal(r.id, 'hcp-4.5:A');
+  // Les autres lignes arrivent pendant les premières secondes : meilleure ligne retenue.
+  r = at({ 'hcp-4.5:A': 3.6, 'hcp-3.5:A': 5.8 }, 1500);
+  assert.equal(r.id, 'hcp-3.5:A');
+  // Ensuite la ligne ne bouge plus, même si une autre devient meilleure.
+  r = at({ 'hcp-4.5:A': 3.6, 'hcp-3.5:A': 5.8 }, 6000);
+  r = at({ 'hcp-4.5:A': 3.6, 'hcp-3.5:A': 2.5, 'hcp-2.5:A': 3.8 }, 12000);
+  assert.equal(r.id, 'hcp-3.5:A');
+  assert.equal(r.status, 'low'); // plus rentable : on le dit, sur la même ligne
+  // Round suivant : nouveau choix.
+  r = at({ 'hcp-4.5:A': 3.6, 'hcp-3.5:A': 2.5, 'hcp-2.5:A': 3.8 }, 30000, 15);
+  assert.equal(r.id, 'hcp-2.5:A');
+});

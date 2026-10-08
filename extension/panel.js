@@ -2,9 +2,9 @@ import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, opp
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
-import { toMatch, describeLog } from './hltv.js';
+import { toMatch, describeLog, feedProblem } from './hltv.js';
 import { createDemoMatch } from './demo.js';
-import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext } from './journal.js';
+import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext, dropForeign } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -46,7 +46,9 @@ async function loadJournal() {
       : Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('probet:' + JKEY))
         .map((k) => [k.slice(7), JSON.parse(localStorage.getItem(k))]));
     for (const [k, v] of Object.entries(all)) if (k.startsWith(JKEY) && v) journal.maps[k.slice(JKEY.length)] = v;
-    const { removed, changed } = mergeDuplicates(journal);
+    const foreign = dropForeign(journal);
+    const { removed: merged, changed } = mergeDuplicates(journal);
+    const removed = [...foreign, ...merged];
     if (removed.length || changed.length) {
       journal.removed = removed;
       for (const k of changed) journalDirty.add(k);
@@ -547,7 +549,7 @@ function oddsCell(id, label, mem) {
 // « FAVORI » : sélection probable sans cote connue (information, pas un pari tant que la cote
 // n'atteint pas le minimum) ; « À JOUER » : cote réelle suffisante.
 const TAGS = { play: 'FAVORI', value: 'À JOUER', sure: 'SI BONNE COTE', low: 'PAS DE PARI', wait: 'PAS DE PARI', none: 'PAS DE PARI',
-  suspended: 'ATTENDRE', stale: 'ATTENDRE', nobook: 'PAS SUR STAKE', suspect: 'À VÉRIFIER' };
+  skip: 'PAS DE PARI', suspended: 'ATTENDRE', stale: 'ATTENDRE', nobook: 'PAS SUR STAKE', suspect: 'À VÉRIFIER' };
 
 // Stake connecté : un pari n'est conseillé que s'il est réellement ouvert chez Stake.
 function bookStatus(rows, mem, matchId) {
@@ -591,6 +593,13 @@ function adviceText(r) {
       return `Trop incertain : ne pariez pas sur ce marché pour l'instant`;
     case 'suspended':
       return `Marché suspendu chez Stake (round en cours) : jouez à sa réouverture si la cote atteint <b>${dec(r.min)}</b>`;
+    case 'skip':
+      return {
+        edge: `Avantage annoncé <b>+${dec((r.ev ?? 0) * 100, 0)} %</b> : trop beau. Dans le journal, ces paris perdent (cote décalée ou erreur du modèle). Pas de pari`,
+        odds: `Cote ${dec(r.odds ?? 0)} trop haute : à 4 et plus, ces paris perdent sur le long terme. Pas de pari`,
+        market: 'Prolongation : marché trop incertain pour parier, information seulement',
+        prematch: 'La map n’a pas commencé : avant-match trop peu fiable, attendez les premiers rounds',
+      }[r.reason] || 'Pas de pari';
     case 'stale':
       return `Cote Stake ${dec(r.odds ?? 0)} pas encore mise à jour depuis la fin du round : jouez si la nouvelle cote atteint <b>${dec(r.min)}</b>`;
     case 'suspect':
@@ -636,6 +645,12 @@ function renderAdvice(picks, list, conf, mem) {
       : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.')
     );
   alertNew(rows, mem);
+  if (mem.feedBad) {
+    setHTML($('advice'), `<li class="adv s-suspect"><div class="adv-how">${mem.feedBad === 'teams'
+      ? 'Le scorebot HLTV envoie des équipes sans nom (« CT » / « Terrorist ») : ce n’est pas ce match.'
+      : 'Le scorebot HLTV envoie une map qui n’est pas jouée dans ce match.'} Rechargez la page HLTV. Aucun conseil ni enregistrement en attendant.</div></li>`);
+    return;
+  }
   setHTML($('advice'), rows.map((r) => {
     const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
@@ -782,9 +797,11 @@ function process(id, src) {
   });
   // Tableau « Que jouer ? » calculé ici (lignes verrouillées pour le round) : le journal note
   // exactement les paris affichés.
+  // Scorebot HLTV sans rapport avec le match de la page : ni conseil ni journal.
+  mem.feedBad = feedProblem(src.scoreboard, src.meta);
   mem.advice ??= {};
-  mem.rows = buildAdvice(mem.advice, { list, picks, odds, minEdge: (settings.edge || 4) / 100, round: res.round });
-  if (src.matchId && src.matchId !== 'demo') {
+  mem.rows = mem.feedBad ? [] : buildAdvice(mem.advice, { list, picks, odds, minEdge: (settings.edge || 4) / 100, round: res.round });
+  if (src.matchId && src.matchId !== 'demo' && !mem.feedBad) {
     const jkey = mapKeyOf(src.matchId, m.map || key);
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
@@ -792,7 +809,7 @@ function process(id, src) {
     // Cote Stake fraîche au round suivant un pari VALUE (cote battue ou non).
     const live = Object.fromEntries(Object.entries(odds).filter(([id]) => mem.live?.[id]?.auto));
     trackNext(journal, jkey, live, res.round);
-    const shown = new Set(mem.rows.filter((r) => r.status === 'value' || r.status === 'play').map((r) => r.id));
+    const shown = new Set(mem.rows.filter((r) => ['value', 'play', 'skip'].includes(r.status)).map((r) => r.id));
     logPicks(journal, jkey, picks.filter((p) => shown.has(p.id)), { round: res.round, a: m.scoreA, b: m.scoreB, phase: m.phase, ready: m.econReady });
     for (const [k, e] of Object.entries(journal.maps)) if (e.matchId === src.matchId) journalDirty.add(k);
   }
@@ -885,6 +902,8 @@ function renderJournal() {
     return t + '.';
   };
   for (const l of [pk(sm.picks.value, 'Paris VALUE'), pk(sm.picks.lean, 'Tendances (favoris sans cote)')]) if (l) lines.push(l);
+  const sk = sm.picks.skip;
+  if (sk?.n) lines.push(`<b>Écartés par les filtres</b> (avantage > 25 %, cote ≥ 4, prolongation, avant la map) : ${sk.won}/${sk.n} gagnés · s'ils avaient été joués : ${sign(sk.units ?? 0)} unités.`);
   const NAMES = { hcp: 'handicap', map: 'map', tot: 'total', ot: 'prolongation', series: 'match' };
   const mk = Object.entries(sm.picks.valueByMarket || {}).map(([k, x]) => `${NAMES[k]} ${x.won}/${x.n} ${sign(x.units ?? 0)} u.`);
   if (mk.length) lines.push(`VALUE par marché : ${mk.join(' · ')}.`);

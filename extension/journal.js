@@ -117,7 +117,7 @@ export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.no
     if (e.picks[id]) continue;
     e.picks[id] = {
       id: p.id, kind: p.kind, group: p.group, label: p.label, p: r3(p.p), pc: r3(p.pc), sd: r3(p.sd),
-      pm: r3(p.pModel), pk: r3(p.pMkt),
+      pm: r3(p.pModel), pk: r3(p.pMkt), reason: p.reason,
       odds: p.odds ?? null, target: r3(p.target), stake: r3(p.stake), round, a, b, t, phase, ready,
     };
   }
@@ -187,7 +187,7 @@ function vsStake(xs) {
 export function summarize(j) {
   const entries = Object.values(j.maps);
   const rounds = [], maps = [], mapsVsHltv = [], mapsVsStake = [], priors = [];
-  const picks = { lean: [], value: [] };
+  const picks = { lean: [], value: [], skip: [] };
   for (const e of entries) {
     for (const R of Object.values(e.rounds)) {
       if (R.w && Number.isFinite(R.start?.pr) && R.start.ready !== false) rounds.push([R.start.pr, R.w === 'A' ? 1 : 0]);
@@ -254,7 +254,7 @@ export function summarize(j) {
     },
     vsStake: vsStake(mapsVsStake),
     prior: { n: priors.length, brier: brier(priors) },
-    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value), valueByMarket: byMarket(picks.value) },
+    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value), skip: pickStats(picks.skip), valueByMarket: byMarket(picks.value) },
   };
 }
 
@@ -294,6 +294,18 @@ export function mergeDuplicates(j) {
     changed.push(id);
   }
   return { removed, changed };
+}
+
+// Maps enregistrées depuis un scorebot HLTV qui envoyait un autre match (map absente de la
+// liste des maps du match) : retirées du journal. Retourne les clés supprimées.
+export function dropForeign(j) {
+  const key = (n) => { const k = String(n || '').toLowerCase().replace(/^de_/, '').replace(/[^a-z0-9]/g, ''); return k === 'dust' ? 'dust2' : k; };
+  const removed = [];
+  for (const [k, e] of Object.entries(j.maps)) {
+    const names = (e.meta?.maps || []).map((mp) => key(mp.name)).filter((x) => x && x !== 'tba');
+    if (e.map && names.length && names.length >= (e.bestOf || 1) && !names.includes(key(e.map))) { delete j.maps[k]; removed.push(k); }
+  }
+  return removed;
 }
 
 // Garde les maps les plus récentes.

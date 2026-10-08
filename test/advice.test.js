@@ -66,7 +66,7 @@ test('handicap : ligne verrouillée pour le round (cas réel −4,5 → −3,5 �
   const mk = (id, p) => ({ id, group: 'Map 1 — handicap', label: id, p, sd: 0 });
   const list = [mk('hcp-4.5:A', 0.3), mk('hcp-4.5:B', 0.7), mk('hcp-3.5:A', 0.38), mk('hcp-3.5:B', 0.62), mk('hcp-2.5:A', 0.47), mk('hcp-2.5:B', 0.53)];
   const st = {};
-  const at = (odds, now, round = 14) => buildAdvice(st, { list, odds, picks: recommend(list, odds, 1, { max: 99 }), round, now })
+  const at = (odds, now, round = 14) => buildAdvice(st, { list, odds, picks: recommend(list, odds, 1, { max: 99, filters: false }), round, now })
     .find((r) => r.key === 'hcp');
   // Juste après le round : seule la ligne −4,5 a déjà sa nouvelle cote.
   let r = at({ 'hcp-4.5:A': 10 }, 0);

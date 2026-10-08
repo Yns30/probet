@@ -13,6 +13,10 @@ export function stablePicks(state, { list, odds = {}, conf = 1, minEdge = 0.04, 
   const prev = new Set(state.shown || []);
   const cur = recommend(list, odds, conf, { minEdge, max: 99, prev });
   let values = cur.filter((p) => p.kind === 'value');
+  let skips = cur.filter((p) => p.kind === 'skip');
+  // Avant le début de la map : la force des équipes n'est connue que par l'avant-match, trop
+  // peu fiable pour un pari VALUE (journal : 1 gagné sur 4).
+  if (phase === 'not_live') { skips = [...values.map((v) => ({ ...v, kind: 'skip', reason: 'prematch' })), ...skips]; values = []; }
   // action : le round a vraiment commencé (kill ou bombe). Inconnu → phase de jeu.
   const live = action ?? LIVE.has(phase);
   const snap = state.snap;
@@ -24,7 +28,8 @@ export function stablePicks(state, { list, odds = {}, conf = 1, minEdge = 0.04, 
     // Pendant le round, Stake ferme ses marchés ou garde la cote d'avant le round : un
     // « avantage » né d'un kill n'est pas jouable. Seuls restent les paris VALUE choisis
     // avant le début du round, tant que leur cote n'a pas changé.
-    const now = new Map(values.map((v) => [v.id, v]));
+    // (Un pari validé avant le round dont l'avantage grimpe ensuite au-delà du filtre reste affiché.)
+    const now = new Map([...skips.filter((x) => x.reason === 'edge').map((x) => [x.id, { ...x, kind: 'value' }]), ...values.map((v) => [v.id, v])]);
     values = (snap.values || []).filter((v) => now.has(v.id) && odds[v.id] === v.odds).map((v) => ({ ...now.get(v.id), frozen: true }));
     const byId = new Map(list.map((m) => [m.id, m]));
     const valueIds = new Set(values.map((v) => v.id));
@@ -32,7 +37,7 @@ export function stablePicks(state, { list, odds = {}, conf = 1, minEdge = 0.04, 
       .filter((l) => byId.has(l.id) && !odds[l.id] && !valueIds.has(l.id) && byId.get(l.id).p >= 0.5)
       .map((l) => ({ ...l, frozen: true, now: byId.get(l.id).p }));
   }
-  const out = [...values, ...leans].slice(0, max);
+  const out = [...values, ...skips, ...leans].slice(0, max);
   state.shown = out.map((p) => p.id);
   return out;
 }

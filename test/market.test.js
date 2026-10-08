@@ -16,7 +16,9 @@ test('modèle trop optimiste face à Stake : plus de faux pari VALUE', () => {
   const odds = { 'map:A': 2.6, 'map:B': 1.5 }; // Stake : A ≈ 37 %
   const raw = [mk('map:A', 0.5), mk('map:B', 0.5)];
   // Modèle seul : A à 50 % contre une cote de 2,6 → +30 % d'avantage annoncé.
-  assert.equal(recommend(raw, odds, 1)[0]?.kind, 'value');
+  assert.equal(recommend(raw, odds, 1, { filters: false })[0]?.kind, 'value');
+  // Avec les filtres : +30 % annoncé, trop beau pour être vrai, écarté.
+  assert.equal(recommend(raw, odds, 1)[0]?.reason, 'edge');
   // Combiné au marché : ≈ 43 %, encore +12 % : on joue, mais l'avantage est plus réaliste.
   const list = blendMarket(raw, odds, 0.5);
   assert.ok(list[0].p > 0.4 && list[0].p < 0.45, `${list[0].p}`);
@@ -32,7 +34,7 @@ test('mise totale plafonnée quand plusieurs paris VALUE vont ensemble', () => {
   const list = [mk('map:A', 0.7), mk('map:B', 0.3), { ...mk('hcp-1.5:A', 0.65), group: 'h' }, { ...mk('hcp-1.5:B', 0.35), group: 'h' },
     { ...mk('series:A', 0.75), group: 's' }, { ...mk('series:B', 0.25), group: 's' }];
   const odds = { 'map:A': 2.2, 'hcp-1.5:A': 2.4, 'series:A': 2.3 };
-  const picks = recommend(list, odds, 1, { max: 99 });
+  const picks = recommend(list, odds, 1, { max: 99, filters: false });
   const rows = buildAdvice({}, { list, picks, odds });
   const total = rows.filter((r) => r.status === 'value').reduce((s, r) => s + r.stake, 0);
   assert.ok(rows.filter((r) => r.status === 'value').length >= 3);

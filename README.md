@@ -77,6 +77,21 @@ La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dan
 - **Handicap en tête.** Quand aucune ligne n'est rentable, ProBet montre quand même la ligne Stake la plus proche d'un bon pari et la cote à attendre.
 - **Numéro de la map** (1, 2 ou 3) : c'est la place de la map en cours dans la liste des maps du match sur HLTV, et non plus le nombre de maps terminées. HLTV ne met pas à jour ces scores sans recharger la page, ce qui donnait « map 1 » pendant les maps 2 et 3. Le score de la série (maps gagnées) est alors pris chez Stake, sinon dans le journal. La ligne Stake du panneau indique la map dont les cotes sont utilisées. Tous les onglets Stake (Principal, Map 1, Map 2, Map 3) sont lus, quel que soit celui affiché ; l'onglet Joueurs n'est pas utilisé.
 
+### Filtres des paris VALUE (tirés du journal)
+
+Sur 65 paris VALUE réels, certains paris perdent nettement. ProBet ne les propose plus et affiche à la place « PAS DE PARI » avec la raison :
+
+| Filtre | Résultat dans le journal |
+|---|---|
+| Avantage annoncé supérieur à 25 % (presque toujours une cote décalée ou une erreur du modèle) | 3 gagnés sur 12, −6,1 unités |
+| Cote de 4 ou plus | 3 gagnés sur 18, −2,4 unités |
+| Prolongation | 1 gagné sur 4 |
+| Avant le début de la map (avant-match trop peu fiable) | 1 gagné sur 4 |
+
+Les paris restants : 37, dont 65 % gagnés, +14,7 unités. Ces filtres ont été choisis sur ces mêmes paris : le journal note donc à part les paris écartés (« Écartés par les filtres ») pour vérifier sur la suite qu'ils perdent vraiment.
+
+Un scorebot HLTV qui envoie un autre match (équipes « CT » / « Terrorist », ou map absente de la liste du match) est détecté : aucun conseil ni enregistrement tant que la page n'est pas rechargée, et ces maps sont retirées du journal.
+
 ### Cotes fraîches uniquement
 
 - **Après chaque round**, ProBet connaît le résultat tout de suite, Stake met quelques secondes à recalculer. Une cote Stake qui n'a pas changé depuis la fin du round n'est pas utilisée : la ligne affiche **ATTENDRE**, avec la cote minimale à exiger quand la nouvelle cote arrive.

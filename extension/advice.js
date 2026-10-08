@@ -9,6 +9,7 @@
 import { PICK, evaluateBet } from './engine.js';
 
 export const MAX_EXPOSURE = 0.05;
+const STATUS = { value: 'value', lean: 'play', skip: 'skip' };
 
 export const CATEGORIES = [
   // Handicap en tête : le marché le plus fiable du journal (81 % gagnés pour 82 % annoncé ;
@@ -47,7 +48,7 @@ export function buildAdvice(state, { list, picks, odds = {}, minEdge = 0.04, rou
     const pick = inCat.find((p) => p.kind === 'value') ?? inCat[0];
     if (pick) {
       state.fav[cat.key] = pick.id;
-      rows.push({ key: cat.key, label, id: pick.id, sel: pick.label, p: pick.p, status: pick.kind === 'value' ? 'value' : 'play',
+      rows.push({ key: cat.key, label, id: pick.id, sel: pick.label, p: pick.p, status: STATUS[pick.kind], reason: pick.reason,
         min: pick.target, odds: pick.odds ?? odds[pick.id] ?? null, ev: pick.ev, stake: pick.stake, frozen: pick.frozen, now: pick.now,
         pm: pick.pModel, pk: pick.pMkt });
       continue;
@@ -102,6 +103,7 @@ function lockedLine(state, key, { items, inCat, odds, round, now, pcOf, minEdge 
     if (prev && ev(prev) != null && (!best || ev(prev) >= best.ev - LINE_LOCK.keep)) id = prev;
     else if (best) id = best.id;
     else if (prev && odds[prev] > 1) id = prev;
+    else if (inCat.some((x) => x.kind === 'skip')) id = inCat.find((x) => x.kind === 'skip').id;
     else {
       const lean = inCat.find((p) => p.kind === 'lean');
       const priced = items.filter((m) => odds[m.id] > 1 && m.p >= 0.35);
@@ -112,6 +114,8 @@ function lockedLine(state, key, { items, inCat, odds, round, now, pcOf, minEdge 
   }
   if (!id) return null;
   const v = values.find((x) => x.id === id);
+  const sk = !v && inCat.find((x) => x.id === id && x.kind === 'skip');
+  if (sk) return { id, sel: sk.label, p: sk.p, status: 'skip', reason: sk.reason, min: sk.target, odds: sk.odds, ev: sk.ev, pm: sk.pModel, pk: sk.pMkt, locked: true };
   if (v) {
     return { id, sel: v.label, p: v.p, status: 'value', min: v.target, odds: v.odds ?? odds[id] ?? null, ev: v.ev,
       stake: v.stake, frozen: v.frozen, now: v.now, pm: v.pModel, pk: v.pMkt, locked: true };

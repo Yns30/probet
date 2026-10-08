@@ -531,12 +531,27 @@ export function confidence(res, visionConf, nRounds) {
 //    seuil de sortie plus bas que le seuil d'entrée, et garde sa place dans son marché.
 export const PICK = { k: 1, kValue: 0.5, leanIn: 0.6, leanOut: 0.55, leanMax: 0.88, leanMaxOut: 0.92, valueOut: 0.5 };
 
+// Filtres des paris VALUE, tirés du journal (65 paris réels) :
+//  - avantage annoncé > 25 % : 3 gagnés sur 12 (−6,1 u.) : presque toujours une erreur du
+//    modèle ou une cote décalée, pas une aubaine ;
+//  - cote ≥ 4 : 3 sur 18 (−2,4 u.) ;
+//  - prolongation : 1 sur 4 ; avant le début de la map (dans stablePicks) : 1 sur 4.
+// Ces paris sont notés à part (kind 'skip') pour vérifier les filtres sur la suite.
+export const FILTERS = { maxEdge: 0.25, maxOdds: 4, noValue: /^ot:/ };
+export function skipReason(m, odds, f = FILTERS) {
+  if (f.noValue?.test(m.id)) return 'market';
+  if (odds >= f.maxOdds) return 'odds';
+  if (m.p * odds - 1 > f.maxEdge) return 'edge';
+  return null;
+}
+
 export function recommend(list, oddsById, conf, opts = {}) {
   const minEdge = opts.minEdge ?? 0.04;
   const prev = opts.prev ?? new Set();
   const k = opts.k ?? PICK.k;
   const kv = opts.kValue ?? PICK.kValue;
   const values = [];
+  const skips = [];
   const leans = new Map();
   for (const m of list) {
     const odds = oddsById[m.id];
@@ -547,6 +562,8 @@ export function recommend(list, oddsById, conf, opts = {}) {
     const target = (1 / pc) * (1 + minEdge);
     const ev = evaluateBet(pv, odds);
     if (ev && ev.ev >= (held ? minEdge * PICK.valueOut : minEdge)) {
+      const reason = opts.filters === false ? null : skipReason(m, odds, opts.filters);
+      if (reason) { skips.push({ ...m, pc: pv, odds, fair, target: (1 / pv) * (1 + minEdge), ev: ev.ev, kind: 'skip', reason }); continue; }
       values.push({ ...m, pc: pv, odds, fair, target: (1 / pv) * (1 + minEdge), ev: ev.ev, stake: ev.stake * conf, kind: 'value' });
     } else if (!odds && pc >= (held ? PICK.leanOut : PICK.leanIn) && m.p <= (held ? PICK.leanMaxOut : PICK.leanMax)) {
       const cur = leans.get(m.group);
@@ -555,5 +572,6 @@ export function recommend(list, oddsById, conf, opts = {}) {
     }
   }
   values.sort((x, y) => y.ev - x.ev);
-  return [...values, ...leans.values()].slice(0, opts.max ?? 5);
+  skips.sort((x, y) => y.ev - x.ev);
+  return [...values, ...skips, ...leans.values()].slice(0, opts.max ?? 5);
 }

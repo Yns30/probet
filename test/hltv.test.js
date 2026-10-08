@@ -337,3 +337,13 @@ test('changement de côté : trame où les équipes ont changé de côté mais p
   m = toMatch(frame({ CT: vit, TERRORIST: fal, ctTeamId: 9565, tTeamId: 11283, counterTerroristScore: 10, terroristScore: 3, currentRound: 14 }), meta, mem);
   assert.deepEqual([m.scoreA, m.scoreB], [10, 3]);
 });
+
+test('flux du scorebot sans rapport avec le match de la page (cas réel FaZe - Sangal)', async () => {
+  const { feedProblem } = await import('../extension/hltv.js');
+  const meta = { bestOf: 3, maps: [{ name: 'Dust2' }, { name: 'Nuke' }, { name: 'Cache' }] };
+  assert.equal(feedProblem({ mapName: 'de_inferno', ctTeamName: 'CT', terroristTeamName: 'Terrorist' }, meta), 'teams');
+  assert.equal(feedProblem({ mapName: 'de_inferno', ctTeamName: 'FaZe', terroristTeamName: 'Sangal' }, meta), 'map');
+  assert.equal(feedProblem({ mapName: 'de_nuke', ctTeamName: 'FaZe', terroristTeamName: 'Sangal' }, meta), null);
+  // Maps pas encore toutes connues (décisive « TBA ») : pas de conclusion.
+  assert.equal(feedProblem({ mapName: 'de_inferno', ctTeamName: 'FaZe', terroristTeamName: 'Sangal' }, { bestOf: 3, maps: [{ name: 'Dust2' }, { name: 'TBA' }] }), null);
+});

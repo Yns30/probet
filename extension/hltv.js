@@ -205,6 +205,20 @@ export function seriesState(maps, liveMap) {
   return { mapsA, mapsB, mapNumber, unknown: Math.max(0, mapNumber - 1 + done - mapsA - mapsB) };
 }
 
+// Flux du scorebot qui ne correspond pas au match de la page (cas réel FaZe - Sangal : Inferno,
+// équipes « CT » / « Terrorist », alors que les maps du match sont Dust2, Nuke, Cache).
+// Renvoie la raison, ou null si tout est cohérent.
+const GENERIC = /^(ct|t|terrorists?|counter[- ]?terrorists?)$/i;
+export function feedProblem(sb, meta = {}) {
+  if (!sb) return null;
+  if (GENERIC.test(String(sb.ctTeamName || '').trim()) && GENERIC.test(String(sb.terroristTeamName || '').trim())) return 'teams';
+  // Nom simplifié (toutes les maps, y compris celles hors du pool connu du modèle, comme Cache).
+  const key = (n) => { const k = String(n || '').toLowerCase().replace(/^de_/, '').replace(/[^a-z0-9]/g, ''); return k === 'dust' ? 'dust2' : k; };
+  const names = (meta.maps || []).map((mp) => key(mp.name)).filter((k) => k && k !== 'tba');
+  if (sb.mapName && names.length > 0 && names.length >= (meta.bestOf || 1) && !names.includes(key(sb.mapName))) return 'map';
+  return null;
+}
+
 // Cotes de vainqueur du match (plusieurs bookmakers) → probabilité équipe 1, marge retirée.
 export function oddsToProb(rows) {
   const ps = (rows || [])

@@ -1,4 +1,4 @@
-import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, MODEL_WEIGHT } from './engine.js';
+import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, oppositeOf, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice, CATEGORIES } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
@@ -730,8 +730,17 @@ function process(id, src) {
   mem.roundEnd = Math.max(0, ...(src.log || []).filter((l) => l.type === 'RoundEnd' && l.t).map((l) => l.t));
   const odds = freshOdds(mem);
   mem.fresh = odds;
+  // Cote Stake à plus de 30 points du modèle (ex. 1,72 pour l'équipe menant 12-2) : presque
+  // toujours un décalage (autre map, score en retard) ; jamais un pari, affichée « À VÉRIFIER ».
+  const raw = markets(res, m.names, m, mem.bookLines);
+  for (const mk of raw) {
+    if (mem.live?.[mk.id]?.auto && odds[mk.id] > 1 && Math.abs(1 / odds[mk.id] - mk.p) > 0.3) {
+      delete odds[mk.id];
+      delete odds[oppositeOf(mk.id)];
+    }
+  }
   // Avis du modèle combiné aux cotes Stake (poids appris par le journal).
-  const list = blendMarket(markets(res, m.names, m, mem.bookLines), odds, modelWeight());
+  const list = blendMarket(raw, odds, modelWeight());
   const conf = confidence(res, 0.95, m.rounds.length);
   mem.picks ??= {};
   const picks = stablePicks(mem.picks, {

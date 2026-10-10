@@ -155,6 +155,25 @@ Sur un match simulé, la liste des paris change environ 60 % moins souvent qu'av
 
 Dans **Réglages** : bankroll, avantage minimum exigé pour un pari VALUE, et cotes d'avant-match manuelles si vous préférez les vôtres à celles affichées par HLTV.
 
+## Deux PC : un collecteur, un affichage
+
+Un PC « collecteur » (un portable par exemple) garde ouvertes les pages HLTV et Stake des matchs. Votre PC principal affiche tout en direct (matchs, cotes Stake, conseils, bip, journal) **sans aucune page ouverte**.
+
+**Sur le PC collecteur :**
+1. Installez [Node.js](https://nodejs.org) (version LTS), une seule fois.
+2. Double-cliquez sur `relay/Lancer-relais-ProBet.bat`. La fenêtre affiche **l'adresse** (`http://…:8787`) et **le code**. Laissez-la ouverte. Si Windows demande l'accès au réseau, acceptez pour les réseaux privés.
+3. Dans ProBet → Réglages → Deux PC : « collecte et envoie », adresse `http://127.0.0.1:8787` et le code. Ouvrez les pages HLTV et Stake des matchs comme d'habitude, avec le panneau ProBet ouvert (c'est lui qui envoie).
+4. Conseillé : `chrome://settings/performance` → « Toujours garder ces sites actifs » : `hltv.org`, `stake.com`. Et ne pas laisser le portable se mettre en veille.
+
+**Sur le PC principal :** Réglages → Deux PC : « affiche les données du PC collecteur », l'adresse du collecteur affichée par le relais et le code, puis « Tester la connexion ». Les matchs du collecteur apparaissent dans la liste en haut du panneau (📡 en vert quand tout va bien). Le journal affiché et exporté est celui du collecteur.
+
+**VPN et réseau.** Les deux PC doivent pouvoir se joindre :
+- **Même box, sans VPN** : l'adresse `192.168.x.x` affichée par le relais suffit.
+- **Avec un VPN** (sur un des PC ou les deux) : le VPN bloque souvent le réseau local. Dans l'application VPN, activez l'option du type **« Autoriser le réseau local / LAN »** (souvent dans les réglages avancés ou « split tunneling »).
+- **Si ça ne passe toujours pas, ou pour y accéder hors de chez vous** : installez **Tailscale** (gratuit) sur les deux PC, connectés au même compte. Le relais affiche alors aussi une adresse `100.x.x.x` : utilisez celle-là. Tailscale fonctionne en général à côté d'un VPN, mais certaines applications VPN ne laissent passer qu'une seule connexion VPN : dans ce cas, utilisez l'option « réseau local » ou le split tunneling de votre VPN pour Tailscale.
+
+Seules des données publiques transitent (scores, cotes, journal) : rien de votre compte Stake. L'accès au relais est protégé par le code.
+
 ## Journal des matchs (mesurer la justesse)
 
 Pendant que vous suivez un match, ProBet enregistre sur votre PC, sans aucune requête :
@@ -230,9 +249,11 @@ extension/
   stake-relay.js  relais Stake → panneau
   books.js        match Stake ↔ match HLTV (noms d'équipes) et marchés Stake → marchés ProBet
   journal.js      journal des matchs : prévisions, résultats, paris réglés, bilan
+  remote.js       deux PC : envoi au relais (collecteur) et réception en direct (affichage)
   panel.*         panneau latéral (interface)
   demo.js         match simulé au format HLTV (mode démo, tests)
   background.js   ouvre le panneau au clic sur l'icône
+relay/            probet-relay.mjs (+ Lancer-relais-ProBet.bat) : relais entre le PC collecteur et le PC d'affichage
 tools/            analyse-journal.mjs : analyse d'un export du journal
 test/             tests (npm test, Node 20+) ; test/fixtures : extrait réel d'une page de match HLTV
 ```

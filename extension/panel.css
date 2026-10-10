@@ -186,3 +186,6 @@ td.oc { white-space: nowrap; }
 .diagcard { display: flex; flex-direction: column; gap: 6px; font-size: 11px; color: var(--muted); }
 .diagcard button { align-self: flex-start; padding: 4px 10px; font-size: 12px; }
 .check { display: flex; align-items: center; gap: 8px; } .check input { width: auto; }
+.remote { font-size: 12px; margin-top: 4px; }
+.remote.ok { color: var(--good); }
+.remote.warn { color: var(--warn); }

@@ -290,3 +290,16 @@ test('sigle HLTV inconnu chez Stake (cas réel « LP » / LargadosyPelados)', ()
   assert.equal(findFixture([fx('Metanoia Wolves', 'Zeta Division', ['MW', 'ZETA'], 'prematch')], ['METANOIA Wolves', 'XYZ']), null);
   assert.equal(findFixture([z, ldp], ['METANOIA Wolves', 'XYZ']), null);
 });
+
+test('deux PC : heures du collecteur recalées sur l’horloge de l’affichage', async () => {
+  const { shiftTimes } = await import('../extension/remote.js');
+  const T = 1_790_000_000_000;
+  const st = shiftTimes({ type: 'state', id: 1, state: { lastFrameAt: T, log: [{ t: T, text: 'x' }], frames: 3 } }, 5000);
+  assert.equal(st.state.lastFrameAt, T + 5000);
+  assert.equal(st.state.log[0].t, T + 5000);
+  assert.equal(st.state.frames, 3);
+  const bk = shiftTimes({ type: 'book', id: 2, fixture: { at: T, src: { poll: T }, markets: [{ outcomes: [{ odds: 1.9, seen: T, chg: null }] }] } }, -2000);
+  assert.equal(bk.fixture.src.poll, T - 2000);
+  assert.equal(bk.fixture.markets[0].outcomes[0].seen, T - 2000);
+  assert.equal(bk.fixture.markets[0].outcomes[0].chg, null);
+});

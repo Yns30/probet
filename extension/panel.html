@@ -15,7 +15,6 @@
   <div class="source">
     <select id="matchSelect" aria-label="Match suivi"></select>
     <div id="status" class="status idle"><i></i><span>Recherche d'une page HLTV…</span></div>
-    <div id="remoteState" class="remote" hidden></div>
   </div>
 
   <section id="empty" class="empty">
@@ -108,16 +107,6 @@
       <p class="hint">Par défaut, ProBet utilise les cotes des bookmakers affichées sur la page HLTV pour estimer la force des équipes avant les premiers rounds. Saisissez vos propres cotes pour les remplacer.</p>
       <label>Avantage minimum pour un pari VALUE (%) <input id="setEdge" type="number" min="1" max="20" step="0.5" value="4"></label>
       <label class="check"><input id="setSound" type="checkbox" checked> Signal sonore à chaque nouveau pari « À JOUER »</label>
-      <h3>Deux PC</h3>
-      <p class="hint">Un PC « collecteur » garde les pages HLTV et Stake ouvertes ; l'autre affiche tout en direct, sans aucune page ouverte. Lancez d'abord le relais sur le collecteur (dossier <b>relay</b>, fichier <b>Lancer-relais-ProBet.bat</b>) : il affiche l'adresse et le code à saisir ici, sur les deux PC.</p>
-      <label>Ce PC <select id="setRemoteMode">
-        <option value="off">fonctionne seul</option>
-        <option value="send">collecte et envoie (pages HLTV et Stake ouvertes ici)</option>
-        <option value="receive">affiche les données du PC collecteur</option>
-      </select></label>
-      <label>Adresse du relais <input id="setRemoteUrl" type="text" placeholder="http://192.168.1.20:8787" spellcheck="false"></label>
-      <label>Code du relais <input id="setRemoteCode" type="text" placeholder="affiché par le relais" spellcheck="false"></label>
-      <p><button type="button" id="remoteTest" class="ghost">Tester la connexion</button> <span id="remoteMsg" class="hint"></span></p>
       <h3>Journal des matchs</h3>
       <p class="hint">ProBet enregistre sur votre PC, round par round, ses prévisions, celles de HLTV, les résultats et les paris proposés. Exportez le journal pour mesurer et améliorer la justesse du modèle.</p>
       <p id="journalSummary" class="journal"></p>

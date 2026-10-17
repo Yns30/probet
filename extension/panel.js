@@ -1,7 +1,6 @@
 import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, oppositeOf, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
-import { createSender, connectViewer, testRelay, shiftTimes } from './remote.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog, feedProblem } from './hltv.js';
 import { createDemoMatch } from './demo.js';
@@ -40,7 +39,6 @@ function saveSettings() {
 // Chaque map est stockée sous sa propre clé (« j:… ») : seules les maps modifiées sont réécrites.
 let journal = newJournal();
 const journalDirty = new Set();
-let journalRev = 0; // change à chaque enregistrement (envoi au PC d'affichage)
 const JKEY = 'j:';
 async function loadJournal() {
   try {
@@ -63,7 +61,6 @@ function saveJournal() {
   journal.removed = [];
   const put = {};
   for (const k of journalDirty) if (journal.maps[k]) put[JKEY + k] = journal.maps[k];
-  if (Object.keys(put).length || removed.length) journalRev++;
   journalDirty.clear();
   try {
     if (hasChrome) {
@@ -130,7 +127,6 @@ const BOOK_TTL = 90000;
 const books = new Map(); // tabId → { host, fixture, at }
 function onBook(msg, tabId) {
   if (tabId == null || !msg.fixture) return;
-  if (sender && typeof tabId === 'number') sender.push({ type: 'book', id: tabId, host: msg.host, fixture: msg.fixture });
   books.set(tabId, { host: msg.host, fixture: msg.fixture, at: Date.now() });
   scheduleRender();
 }
@@ -323,7 +319,6 @@ $('matchSelect').addEventListener('change', (e) => {
 });
 
 function onState(id, state) {
-  if (sender && typeof id === 'number') sender.push({ type: 'state', id, state });
   sources.set(id, state);
   refreshSelect();
   // Tous les matchs ouverts sont analysés et enregistrés, même ceux qui ne sont pas affichés.
@@ -341,7 +336,6 @@ if (hasChrome) {
     else if (msg?.type === 'probet:diag') onDiag(msg);
   });
   chrome.tabs.onRemoved.addListener((id) => {
-    sender?.push({ type: 'gone', id });
     if (books.delete(id)) scheduleRender();
     if (sources.delete(id)) { refreshSelect(); render(); }
   });
@@ -811,9 +805,7 @@ function process(id, src) {
   mem.feedBad = feedProblem(src.scoreboard, src.meta);
   mem.advice ??= {};
   mem.rows = mem.feedBad ? [] : buildAdvice(mem.advice, { list, picks, odds, minEdge: (settings.edge || 4) / 100, round: res.round });
-  // PC d'affichage : le journal est celui du PC collecteur (reçu par le relais), rien n'est
-  // enregistré ici.
-  if (src.matchId && src.matchId !== 'demo' && !mem.feedBad && !viewing()) {
+  if (src.matchId && src.matchId !== 'demo' && !mem.feedBad) {
     const jkey = mapKeyOf(src.matchId, m.map || key);
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
@@ -867,10 +859,6 @@ $('btnSettings').addEventListener('click', () => {
   $('setOdds2').value = settings.odds2 ? dec(settings.odds2) : '';
   $('setEdge').value = settings.edge ?? 4;
   $('setSound').checked = settings.sound !== false;
-  $('setRemoteMode').value = settings.remote?.mode || 'off';
-  $('setRemoteUrl').value = settings.remote?.url || '';
-  $('setRemoteCode').value = settings.remote?.code || '';
-  $('remoteMsg').textContent = remoteMsg;
   renderJournal();
   $('settings').showModal();
 });
@@ -881,10 +869,6 @@ $('settings').addEventListener('close', () => {
   settings.odds2 = num('setOdds2');
   settings.edge = Math.max(1, Math.min(20, num('setEdge') ?? 4));
   settings.sound = $('setSound').checked;
-  const remote = { mode: $('setRemoteMode').value, url: $('setRemoteUrl').value.trim(), code: $('setRemoteCode').value.trim() };
-  const changed = JSON.stringify(remote) !== JSON.stringify(settings.remote || {});
-  settings.remote = remote;
-  if (changed) startRemote();
   saveSettings();
   render();
 });
@@ -953,7 +937,7 @@ $('btnClearJournal').addEventListener('click', () => {
 // connaître le score final et régler les paris notés. Une tentative par match et par heure.
 const settleTried = new Map();
 async function settlePending() {
-  if (!hasChrome || viewing()) return;
+  if (!hasChrome) return;
   const open = new Set([...sources.values()].map((s) => String(s.matchId)));
   for (const id of pendingMatches(journal)) {
     if (open.has(id) || Date.now() - (settleTried.get(id) ?? 0) < 3600000) continue;
@@ -977,88 +961,6 @@ async function settlePending() {
   renderJournal();
 }
 
-// ---------- Deux PC (relais) ----------
-// Collecteur : chaque état de page HLTV et Stake part au relais, et le journal toutes les minutes.
-// Affichage : les pages du collecteur arrivent comme des onglets (« r12 »), le journal aussi.
-let sender = null, viewer = null, remoteMsg = '', clockOffset = null;
-const viewing = () => settings.remote?.mode === 'receive' && Boolean(viewer);
-const REMOTE_TEXT = {
-  send: { ok: 'envoi au PC d’affichage : OK', offline: 'relais injoignable (est-il lancé ? bonne adresse ?)', code: 'code du relais incorrect', error: 'erreur du relais' },
-  receive: { ok: 'données du PC collecteur : connecté', offline: 'PC collecteur injoignable, nouvel essai…', closed: 'connexion fermée (code ?)', code: 'code du relais incorrect' },
-};
-function showRemote(state) {
-  const mode = settings.remote?.mode;
-  remoteMsg = state ? REMOTE_TEXT[mode]?.[state] || state : '';
-  const el = $('remoteState');
-  el.hidden = !remoteMsg;
-  el.className = `remote ${state === 'ok' ? 'ok' : 'warn'}`;
-  const n = [...sources.keys()].filter((id) => String(id).startsWith('r')).length;
-  el.textContent = remoteMsg ? `📡 ${remoteMsg}${mode === 'receive' && state === 'ok' ? ` (${n} match${n > 1 ? 's' : ''})` : ''}` : '';
-}
-function dropRemote() {
-  for (const id of [...sources.keys()]) if (String(id).startsWith('r')) sources.delete(id);
-  for (const id of [...books.keys()]) if (String(id).startsWith('r')) books.delete(id);
-}
-function startRemote() {
-  viewer?.close();
-  viewer = null; sender = null; clockOffset = null;
-  dropRemote();
-  refreshSelect(); render();
-  const r = settings.remote || {};
-  if (!r.mode || r.mode === 'off' || !r.url || !r.code) { showRemote(''); return; }
-  if (r.mode === 'send') {
-    sender = createSender({ url: r.url, code: r.code, onStatus: showRemote });
-    for (const [id, st] of sources) if (typeof id === 'number') sender.push({ type: 'state', id, state: st });
-    for (const [id, b] of books) if (typeof id === 'number') sender.push({ type: 'book', id, host: b.host, fixture: b.fixture });
-    sendJournal(true);
-  } else {
-    viewer = connectViewer({ url: r.url, code: r.code, onItem: onRemoteItem, onStatus: showRemote });
-    loadRemoteJournal();
-  }
-}
-let journalSent = -1;
-function sendJournal(force = false) {
-  if (!sender || (!force && journalSent === journalRev)) return;
-  journalSent = journalRev;
-  sender.sendJournal({ v: journal.v, maps: journal.maps });
-}
-async function loadRemoteJournal() {
-  try {
-    const j = await viewer.journal();
-    if (j?.maps) { journal = { ...newJournal(), maps: j.maps }; weightCache.at = 0; }
-  } catch { /* pas encore de journal */ }
-}
-function onRemoteItem(item) {
-  if (item.type === 'journal') { loadRemoteJournal(); return; }
-  const id = `r${item.id}`;
-  if (item.type === 'gone') {
-    sources.delete(id); books.delete(id);
-    refreshSelect(); render(); showRemote('ok');
-    return;
-  }
-  // Décalage d'horloge entre les deux PC : le plus petit écart observé (envoi le plus récent).
-  if (Number.isFinite(item.sentAt)) {
-    const d = Date.now() - item.sentAt;
-    clockOffset = clockOffset == null ? d : Math.min(clockOffset, d);
-  }
-  const it = shiftTimes(item, clockOffset);
-  if (it.type === 'state' && it.state) {
-    const isNew = !sources.has(id);
-    onState(id, it.state);
-    if (isNew) showRemote('ok');
-  } else if (it.type === 'book' && it.fixture) {
-    books.set(id, { host: it.host, fixture: it.fixture, at: Date.now() });
-    scheduleRender();
-  }
-}
-$('remoteTest').addEventListener('click', async () => {
-  $('remoteMsg').textContent = 'Test…';
-  const t = await testRelay($('setRemoteUrl').value, $('setRemoteCode').value.trim());
-  $('remoteMsg').textContent = t.ok
-    ? `Relais OK : ${t.pages} page${t.pages > 1 ? 's' : ''} reçue${t.pages > 1 ? 's' : ''} du collecteur, ${t.viewers} affichage${t.viewers > 1 ? 's' : ''} connecté${t.viewers > 1 ? 's' : ''}.`
-    : t.why === 'code' ? 'Code incorrect.' : `Relais injoignable (${t.why}) : vérifiez l’adresse, que le relais est lancé, et le réseau (voir README).`;
-});
-
 // ---------- Démarrage ----------
 
 await loadSettings();
@@ -1067,8 +969,6 @@ await loadJournal();
 settlePending();
 setInterval(settlePending, 10 * 60000);
 await discover();
-startRemote();
-setInterval(() => sendJournal(), 60000);
 wakeBooks();
 setInterval(wakeBooks, 5000);
 setInterval(discover, 10000);

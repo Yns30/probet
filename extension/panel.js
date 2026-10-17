@@ -4,7 +4,7 @@ import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog, feedProblem } from './hltv.js';
 import { createDemoMatch } from './demo.js';
-import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext, dropForeign } from './journal.js';
+import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext, dropForeign, markTaken } from './journal.js';
 
 const $ = (id) => document.getElementById(id);
 const pct = (p) => `${Math.round(p * 100)}%`;
@@ -317,7 +317,7 @@ function refreshSelect() {
     // Priorité à un onglet qui reçoit des données live.
     selected = ids.find((id) => sources.get(id).scoreboard) ?? ids[0] ?? null;
   }
-  sel.innerHTML = ids.map((id) => `<option value="${esc(id)}"${id === selected ? ' selected' : ''}>${esc(label(sources.get(id)))}</option>`).join('');
+  setHTML(sel, ids.map((id) => `<option value="${esc(id)}"${id === selected ? ' selected' : ''}>${esc(label(sources.get(id)))}</option>`).join(''));
   renderChips();
 }
 // Un bouton par match suivi (à partir de deux) ; pastille verte quand un pari est à jouer.
@@ -347,9 +347,23 @@ $('matchSelect').addEventListener('change', (e) => {
   render();
 });
 
+// Situation de jeu (score, round, phase, joueurs en vie, bombe) : un changement est traité tout
+// de suite ; le reste (argent, chrono…) au plus toutes les 1,5 s. Un calcul coûte ~20 ms : avec
+// plusieurs matchs suivis, tout recalculer à chaque message ralentissait le panneau.
+const lastProc = new Map();
+function gameKey(sb) {
+  if (!sb) return '';
+  const alive = (side) => (sb[side] || []).filter((p) => p.alive !== false && (p.hp ?? 100) > 0).length;
+  return [sb.counterTerroristScore, sb.terroristScore, sb.currentRound, sb.currentRoundState, sb.frozen, sb.live,
+    sb.bombPlanted, alive('CT'), alive('TERRORIST'), sb.mapName].join('|');
+}
 function onState(id, state) {
   sources.set(id, state);
   refreshSelect();
+  const key = gameKey(state?.scoreboard), prev = lastProc.get(id);
+  if (prev && prev.u === state?.updatedAt && prev.key === key) return; // rien de nouveau
+  if (prev && prev.key === key && Date.now() - prev.t < 1500) return;
+  lastProc.set(id, { key, u: state?.updatedAt, t: Date.now() });
   // Tous les matchs ouverts sont analysés et enregistrés, même ceux qui ne sont pas affichés.
   if (id === selected) render();
   else if (state?.scoreboard) process(id, state);
@@ -680,6 +694,9 @@ function nowHTML(mem, m) {
         <div><small>Jouer si ≥</small><b>${dec(r.min)}</b></div>
         <div><small>Mise</small><b>${dec(r.stake * 100, 1)} %</b>${bank ? `<em>${Math.round(r.stake * bank)} €</em>` : ''}</div>
       </div>
+      <div class="now-act">${mem.taken?.has(`${r.id}|${mem.lastRound}`)
+        ? '<span class="now-done">✓ Noté dans le journal</span>'
+        : `<button type="button" class="ghost" data-taken="${esc(r.id)}">✓ Je l’ai joué</button>`}</div>
       <div class="now-note">Avantage estimé +${dec(r.ev * 100, 1)} % · ProBet ${pct(r.p)}${r.pk != null ? ` · Stake ${pct(r.pk)}` : ''}${r.locked ? ' · ligne fixée jusqu’à la fin du round' : ''}</div>
     </div>`).join('');
   }
@@ -693,6 +710,21 @@ function nowHTML(mem, m) {
   else msg = 'Rien à jouer pour l’instant. Un bip vous préviendra.';
   return `<div class="now-box idle"><span>${msg}</span></div>`;
 }
+// « Je l'ai joué » : le pari est marqué dans le journal avec la cote affichée et la mise conseillée.
+$('now').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-taken]');
+  const src = sources.get(selected);
+  if (!b || !src) return;
+  const mem = memFor(src.matchId || selected);
+  const r = mem.bets?.find((x) => x.id === b.dataset.taken);
+  if (!r || !mem.jkey) return;
+  if (markTaken(journal, mem.jkey, r, { odds: r.odds, stake: r.stake, round: mem.lastRound })) {
+    (mem.taken ??= new Set()).add(`${r.id}|${mem.lastRound}`);
+    journalDirty.add(mem.jkey);
+    saveJournal();
+    render();
+  }
+});
 // Ligne d'état Stake, courte ; le détail des sources est dans l'infobulle.
 function bookLine(mem) {
   if (!mem.book) return '';
@@ -875,6 +907,7 @@ function process(id, src) {
   if (sig !== mem.betSig) { mem.betSig = sig; renderChips(); }
   if (src.matchId && src.matchId !== 'demo' && !mem.feedBad) {
     const jkey = mapKeyOf(src.matchId, m.map || key);
+    mem.jkey = jkey;
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
     record(journal, { key: jkey, matchId: src.matchId, m, res, hltv: validHltv(src.meta?.hltvProb), scoreboard: src.scoreboard, meta: src.meta, mk });
     backfill(journal, src.matchId, src.meta?.maps);
@@ -979,6 +1012,8 @@ function renderJournal() {
     return t + '.';
   };
   for (const l of [pk(sm.picks.value, 'Paris VALUE'), pk(sm.picks.lean, 'Tendances (favoris sans cote)')]) if (l) lines.push(l);
+  const tk = sm.picks.taken;
+  if (tk?.n) lines.unshift(`<b>Vos paris joués</b> : ${tk.won}/${tk.n} gagnés · cote moyenne ${dec(tk.avgOdds)} · <b>${sign(tk.units ?? 0)} unités</b>${tk.staked != null ? ` (${sign(tk.staked * 100)} % de bankroll)` : ''}.`);
   const sk = sm.picks.skip;
   if (sk?.n) lines.push(`<b>Écartés par les filtres</b> (avantage > 25 %, cote ≥ 4, prolongation, avant la map) : ${sk.won}/${sk.n} gagnés · s'ils avaient été joués : ${sign(sk.units ?? 0)} unités.`);
   const NAMES = { hcp: 'handicap', map: 'map', tot: 'total', ot: 'prolongation', series: 'match' };

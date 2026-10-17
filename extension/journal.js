@@ -123,6 +123,16 @@ export function logPicks(j, key, picks, { round, a, b, phase, ready, t = Date.no
   }
 }
 
+// Pari réellement joué par l'utilisateur (bouton « Je l'ai joué ») : cote et mise prises.
+export function markTaken(j, key, pick, { odds, stake, round, t = Date.now() } = {}) {
+  const e = j.maps[key];
+  if (!e || !pick?.id) return false;
+  const k = `value:${pick.id}`;
+  e.picks[k] ??= { id: pick.id, kind: 'value', label: pick.sel ?? pick.label, p: r3(pick.p), odds: odds ?? null, round, t };
+  e.picks[k].taken = { odds: odds ?? e.picks[k].odds, stake: r3(stake), t };
+  return true;
+}
+
 // Cote « suivante » d'un pari VALUE : première cote Stake fraîche d'un round suivant. Si elle
 // est plus basse que la cote prise, le marché est venu vers nous : on a battu le bookmaker.
 export function trackNext(j, key, odds, round) {
@@ -188,6 +198,7 @@ export function summarize(j) {
   const entries = Object.values(j.maps);
   const rounds = [], maps = [], mapsVsHltv = [], mapsVsStake = [], priors = [];
   const picks = { lean: [], value: [], skip: [] };
+  const taken = [];
   for (const e of entries) {
     for (const R of Object.values(e.rounds)) {
       if (R.w && Number.isFinite(R.start?.pr) && R.start.ready !== false) rounds.push([R.start.pr, R.w === 'A' ? 1 : 0]);
@@ -209,6 +220,8 @@ export function summarize(j) {
     for (const p of Object.values(e.picks).sort((x, y) => (x.t ?? 0) - (y.t ?? 0))) {
       const cat = /^(map|hcp|tot|ot|series|round)/.exec(p.id)?.[1];
       const k = `${p.kind}|${cat}|${p.round}`;
+      // Paris réellement joués : tous comptés (indépendamment du dédoublonnage ci-dessous).
+      if (p.taken) { const w = settle(p.id, e); if (w != null) taken.push({ ...p, odds: p.taken.odds ?? p.odds, stake: p.taken.stake, won: w }); }
       if (once.has(k)) continue;
       once.add(k);
       const won = settle(p.id, e);
@@ -254,7 +267,7 @@ export function summarize(j) {
     },
     vsStake: vsStake(mapsVsStake),
     prior: { n: priors.length, brier: brier(priors) },
-    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value), skip: pickStats(picks.skip), valueByMarket: byMarket(picks.value) },
+    picks: { lean: pickStats(picks.lean), value: pickStats(picks.value), skip: pickStats(picks.skip), valueByMarket: byMarket(picks.value), taken: pickStats(taken) },
   };
 }
 

@@ -256,3 +256,6 @@ label select { background: var(--bg); border: 1px solid var(--line); border-radi
 .steps li span { font-size: 12px; color: var(--muted); }
 .spark[hidden] { display: none; }
 .empty .hint, .steps span { word-break: normal; overflow-wrap: anywhere; }
+.now-act { margin-top: 8px; }
+.now-act button { padding: 4px 10px; font-size: 12px; border-color: var(--good); color: var(--good); }
+.now-done { font-size: 12px; color: var(--good); font-weight: 600; }

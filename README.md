@@ -59,6 +59,7 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 
 - **Pour commencer** : tant qu'aucun match n'est suivi, le panneau affiche les 3 étapes (match HLTV, même match sur Stake, panneau ouvert), cochées au fur et à mesure.
 - **Bandeau du haut** : le pari à jouer maintenant, en grand (ligne, cote Stake, cote minimale, mise en % et en €), ou ce qu'on attend (« round en cours », « Stake recalcule ses cotes », « ouvrez ce match sur Stake »…). Un bip le signale, même si un autre match est affiché.
+- **« Je l'ai joué »** : un clic sur le bandeau note le pari réellement pris (cote et mise). Le bilan du journal affiche alors **vos paris joués** à part : votre vrai résultat.
 - **Plusieurs matchs** : une pastille par match en haut du panneau ; elle passe au vert avec « À JOUER » quand ce match a un pari à prendre.
 - **Tous les marchés du moment** : les lignes sans action tiennent sur une ligne (explication au survol) ; seules celles qui demandent une décision (À JOUER, ATTENDRE, À VÉRIFIER) sont détaillées.
 - **Plus de détails** : avant-match, analyse et toutes les lignes, repliés par défaut.

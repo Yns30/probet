@@ -4,7 +4,7 @@ import { analyze, markets } from '../extension/engine.js';
 import { toMatch } from '../extension/hltv.js';
 import { stablePicks } from '../extension/picks.js';
 import { createDemoMatch } from '../extension/demo.js';
-import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates, pendingMatches, trackNext } from '../extension/journal.js';
+import { newJournal, record, backfill, logPicks, settle, summarize, mergeDuplicates, pendingMatches, trackNext, markTaken } from '../extension/journal.js';
 
 // Suit une map simulée entière comme le ferait le panneau.
 function playMap(seed) {
@@ -159,4 +159,18 @@ test('bilan des paris : cote moyenne, réussite nécessaire, cote battue', () =>
   assert.deepEqual(Object.keys(summarize(j).picks.valueByMarket), ['hcp', 'map']);
   const l = summarize(j).picks.lean;
   assert.ok(Math.abs(l.atMin - 0.4) < 1e-9);
+});
+
+test('paris réellement joués (bouton « Je l’ai joué ») : bilan à part', () => {
+  const j = { v: 1, maps: { m: { matchId: '1', map: 'nuke', teams: ['A', 'B'], rounds: {}, final: { a: 13, b: 9, w: 'A' }, picks: {
+    'value:hcp-2.5:A': { id: 'hcp-2.5:A', kind: 'value', p: 0.5, odds: 2.2, round: 4, t: 1 },
+  } } } };
+  assert.equal(markTaken(j, 'm', { id: 'hcp-2.5:A', p: 0.5 }, { odds: 2.1, stake: 0.02, round: 4 }), true);
+  assert.equal(markTaken(j, 'm', { id: 'map:A', sel: 'A', p: 0.6 }, { odds: 1.8, stake: 0.01, round: 9 }), true); // pas encore noté
+  assert.equal(markTaken(j, 'inconnu', { id: 'map:A' }), false);
+  const t = summarize(j).picks.taken;
+  assert.equal(t.n, 2);
+  assert.equal(t.won, 2);
+  assert.ok(Math.abs(t.units - (1.1 + 0.8)) < 1e-9);
+  assert.ok(Math.abs(t.staked - (0.022 + 0.008)) < 1e-9);
 });

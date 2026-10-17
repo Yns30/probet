@@ -361,9 +361,14 @@ function onState(id, state) {
   sources.set(id, state);
   refreshSelect();
   const key = gameKey(state?.scoreboard), prev = lastProc.get(id);
-  if (prev && prev.u === state?.updatedAt && prev.key === key) return; // rien de nouveau
-  if (prev && prev.key === key && Date.now() - prev.t < 1500) return;
-  lastProc.set(id, { key, u: state?.updatedAt, t: Date.now() });
+  if (prev && state?.updatedAt != null && prev.u === state.updatedAt && prev.key === key) return; // rien de nouveau
+  if (prev && prev.key === key && Date.now() - prev.t < 1500) {
+    // Regroupé : traité à la fin du délai (le dernier état n'est jamais perdu).
+    if (!prev.timer) prev.timer = setTimeout(() => { prev.timer = null; prev.t = 0; if (sources.has(id)) onState(id, sources.get(id)); }, 1500 - (Date.now() - prev.t));
+    return;
+  }
+  if (prev?.timer) clearTimeout(prev.timer);
+  lastProc.set(id, { key, u: state?.updatedAt, t: Date.now(), timer: null });
   // Tous les matchs ouverts sont analysés et enregistrés, même ceux qui ne sont pas affichés.
   if (id === selected) render();
   else if (state?.scoreboard) process(id, state);
@@ -690,11 +695,11 @@ function nowHTML(mem, m) {
       <div class="now-head"><span class="now-tag">À JOUER</span><span class="now-mk">${esc(r.label.replace(' · prioritaire', ''))}${mem.book?.map ? ` · map ${mem.book.map}` : ''}</span></div>
       <div class="now-sel">${esc(r.sel)}</div>
       <div class="now-grid">
-        <div><small>Cote Stake</small><b>${dec(r.odds)}</b></div>
+        <div><small>${mem.book ? 'Cote Stake' : 'Cote'}</small><b>${dec(r.odds)}</b></div>
         <div><small>Jouer si ≥</small><b>${dec(r.min)}</b></div>
         <div><small>Mise</small><b>${dec(r.stake * 100, 1)} %</b>${bank ? `<em>${Math.round(r.stake * bank)} €</em>` : ''}</div>
       </div>
-      <div class="now-act">${mem.taken?.has(`${r.id}|${mem.lastRound}`)
+      <div class="now-act">${!mem.jkey ? '' : mem.taken?.has(`${r.id}|${mem.lastRound}`)
         ? '<span class="now-done">✓ Noté dans le journal</span>'
         : `<button type="button" class="ghost" data-taken="${esc(r.id)}">✓ Je l’ai joué</button>`}</div>
       <div class="now-note">Avantage estimé +${dec(r.ev * 100, 1)} % · ProBet ${pct(r.p)}${r.pk != null ? ` · Stake ${pct(r.pk)}` : ''}${r.locked ? ' · ligne fixée jusqu’à la fin du round' : ''}</div>
@@ -750,7 +755,8 @@ function renderAdvice(picks, list, conf, mem, m) {
       return `<li class="adv compact s-${r.status}" title="${esc(adviceText(r).replace(/<[^>]+>/g, ''))}">
         <span class="adv-mk">${esc(r.label.replace(' · prioritaire', ''))}</span>
         <span class="adv-sel">${r.id ? `${esc(r.sel)} <small>${pct(r.p)}</small>` : ''}</span>
-        <span class="adv-tag">${TAGS[r.status]}</span></li>`;
+        <span class="adv-tag">${TAGS[r.status]}</span>
+        ${!mem.book && r.id ? `<span class="adv-odds">${oddsCell(r.id, `${r.sel} — ${r.label}`, mem)}</span>` : ''}</li>`;
     }
     return `<li class="adv s-${r.status}${r.status === 'value' ? ' go' : ''}">
       <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
@@ -1013,7 +1019,7 @@ function renderJournal() {
   };
   for (const l of [pk(sm.picks.value, 'Paris VALUE'), pk(sm.picks.lean, 'Tendances (favoris sans cote)')]) if (l) lines.push(l);
   const tk = sm.picks.taken;
-  if (tk?.n) lines.unshift(`<b>Vos paris joués</b> : ${tk.won}/${tk.n} gagnés · cote moyenne ${dec(tk.avgOdds)} · <b>${sign(tk.units ?? 0)} unités</b>${tk.staked != null ? ` (${sign(tk.staked * 100)} % de bankroll)` : ''}.`);
+  if (tk?.n) lines.unshift(`<b>Vos paris joués</b> : ${tk.won}/${tk.n} gagnés · ${tk.avgOdds != null ? `cote moyenne ${dec(tk.avgOdds)} · ` : ''} <b>${sign(tk.units ?? 0)} unités</b>${tk.staked != null ? ` (${sign(tk.staked * 100)} % de bankroll)` : ''}.`);
   const sk = sm.picks.skip;
   if (sk?.n) lines.push(`<b>Écartés par les filtres</b> (avantage > 25 %, cote ≥ 4, prolongation, avant la map) : ${sk.won}/${sk.n} gagnés · s'ils avaient été joués : ${sign(sk.units ?? 0)} unités.`);
   const NAMES = { hcp: 'handicap', map: 'map', tot: 'total', ot: 'prolongation', series: 'match' };

@@ -55,6 +55,15 @@ Le bouton **Essayer avec un match simulé** montre le fonctionnement sans match 
 | Maps déjà jouées dans la série, **mi-temps par mi-temps** | Preuve directe de l'écart entre les équipes (avec le côté CT/T de chaque moitié) |
 | Format BO1/BO3/BO5, maps gagnées | Probabilité de gagner la série |
 
+## L'interface
+
+- **Pour commencer** : tant qu'aucun match n'est suivi, le panneau affiche les 3 étapes (match HLTV, même match sur Stake, panneau ouvert), cochées au fur et à mesure.
+- **Bandeau du haut** : le pari à jouer maintenant, en grand (ligne, cote Stake, cote minimale, mise en % et en €), ou ce qu'on attend (« round en cours », « Stake recalcule ses cotes », « ouvrez ce match sur Stake »…). Un bip le signale, même si un autre match est affiché.
+- **Plusieurs matchs** : une pastille par match en haut du panneau ; elle passe au vert avec « À JOUER » quand ce match a un pari à prendre.
+- **Tous les marchés du moment** : les lignes sans action tiennent sur une ligne (explication au survol) ; seules celles qui demandent une décision (À JOUER, ATTENDRE, À VÉRIFIER) sont détaillées.
+- **Plus de détails** : avant-match, analyse et toutes les lignes, repliés par défaut.
+- **Thème** : automatique (comme Windows), sombre ou clair, dans Réglages.
+
 ## Comment parier avec ProBet
 
 La section **Que jouer ?** est un tableau fixe : toujours les mêmes lignes, dans le même ordre (handicap en premier, c'est le marché le plus fiable du journal ; puis vainqueur de la map, handicap, total de rounds, prolongation, vainqueur du match). Chaque ligne a un statut :

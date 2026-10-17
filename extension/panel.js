@@ -21,6 +21,12 @@ const BUYS = { eco: 'Eco', force: 'Force-buy', half: 'Demi-buy', full: 'Full buy
 // ---------- Réglages ----------
 
 const settings = { bank: null, edge: 4, odds1: null, odds2: null };
+// Thème : automatique (comme le système), sombre ou clair.
+function applyTheme() {
+  const t = settings.theme || 'auto';
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+}
 async function loadSettings() {
   try {
     const saved = hasChrome ? (await chrome.storage.local.get('settings')).settings : JSON.parse(localStorage.getItem('probet:settings'));
@@ -312,7 +318,30 @@ function refreshSelect() {
     selected = ids.find((id) => sources.get(id).scoreboard) ?? ids[0] ?? null;
   }
   sel.innerHTML = ids.map((id) => `<option value="${esc(id)}"${id === selected ? ' selected' : ''}>${esc(label(sources.get(id)))}</option>`).join('');
+  renderChips();
 }
+// Un bouton par match suivi (à partir de deux) ; pastille verte quand un pari est à jouer.
+function renderChips() {
+  const ids = [...sources.keys()];
+  const el = $('matchChips');
+  el.hidden = ids.length < 2;
+  if (el.hidden) return;
+  setHTML(el, ids.map((id) => {
+    const src = sources.get(id);
+    const mem = mems.get(src.matchId || id);
+    const n = mem?.bets?.length || 0;
+    const live = src.scoreboard && src.lastFrameAt && Date.now() - src.lastFrameAt < 90000;
+    return `<button type="button" class="chip${id === selected ? ' on' : ''}${n ? ' bet' : ''}" data-match="${esc(id)}">
+      <i class="${live ? 'live' : ''}"></i>${esc(label(src))}${n ? `<b>À JOUER</b>` : ''}</button>`;
+  }).join(''));
+}
+$('matchChips').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-match]');
+  if (!b) return;
+  selected = [...sources.keys()].find((id) => String(id) === b.dataset.match) ?? selected;
+  renderChips();
+  render();
+});
 $('matchSelect').addEventListener('change', (e) => {
   selected = [...sources.keys()].find((id) => String(id) === e.target.value) ?? null;
   render();
@@ -470,6 +499,8 @@ function renderProbs(m, res, src) {
 function renderSpark(history, name) {
   const svg = $('spark');
   $('sparkLabel').textContent = name;
+  // Graphique caché tant qu'il n'y a pas assez de points (évite un grand cadre vide).
+  svg.closest('figure').hidden = history.length < 3;
   if (history.length < 2) { svg.innerHTML = '<line class="mid" x1="0" x2="300" y1="35" y2="35"/>'; return; }
   const x = (i) => (i / (history.length - 1)) * 300;
   const y = (p) => 4 + (1 - p) * 62;
@@ -567,7 +598,7 @@ function bookStatus(rows, mem, matchId) {
     if (isStale(l, mem)) return { ...r, status: 'stale', odds: l.odds };
     // Cote très loin du modèle : presque toujours un décalage (score, map) plutôt qu'une aubaine.
     const pm = r.pm ?? r.p;
-    if (pm != null && Math.abs(1 / l.odds - pm) > 0.3) return { ...r, status: 'suspect' };
+    if (pm != null && Math.abs(1 / l.odds - pm) > 0.3) return { ...r, status: 'suspect', odds: l.odds };
     return r;
   });
 }
@@ -632,37 +663,67 @@ function alertNew(rows, mem) {
   } catch { /* son indisponible */ }
 }
 
-function renderAdvice(picks, list, conf, mem) {
-  $('conf').innerHTML = `Fiabilité <b>${pct(conf)}</b>`;
-  if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
-  mem.advice ??= {};
-  const src = sources.get(selected);
-  const rows = bookStatus(mem.rows ?? buildAdvice(mem.advice, { list, picks, odds: mem.fresh ?? mem.odds, minEdge: (settings.edge || 4) / 100 }), mem, src?.matchId);
-  if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">conseils figés pendant le round</span>';
-  setHTML($('bookState'), (mem.book
-    ? `<span class="ok">● Cotes ${esc(mem.book.host)}</span> · ${esc(mem.book.name)}${
-      mem.book.map ? ` · <b>map ${mem.book.map}</b>` : ''}${
-      mem.book.age != null ? ` · mise à jour il y a ${Math.round(mem.book.age / 1000)} s` : ''}${
-      mem.book.mapNote ? ` · <span class="warn">${esc(mem.book.mapNote)}</span>` : ''}
-      <div class="srcs">${sourcesLine(mem.book.src)}</div>`
-    : books.size ? `Page${books.size > 1 ? 's' : ''} Stake ouverte${books.size > 1 ? 's' : ''} (${esc([...books.values()].map((b) => b.fixture?.name).filter(Boolean).join(', ') || 'aucun match')}) : pas ce match. Ouvrez ce match sur Stake.`
-      : 'Ouvrez ce match sur Stake dans un autre onglet : les cotes s’affichent toutes seules.')
-    );
-  alertNew(rows, mem);
+// Bandeau du haut : le pari à jouer maintenant, ou ce qu'on attend.
+function nowHTML(mem, m) {
   if (mem.feedBad) {
-    setHTML($('advice'), `<li class="adv s-suspect"><div class="adv-how">${mem.feedBad === 'teams'
-      ? 'Le scorebot HLTV envoie des équipes sans nom (« CT » / « Terrorist ») : ce n’est pas ce match.'
-      : 'Le scorebot HLTV envoie une map qui n’est pas jouée dans ce match.'} Rechargez la page HLTV. Aucun conseil ni enregistrement en attendant.</div></li>`);
-    return;
+    return `<div class="now-box warn"><b>Données HLTV incohérentes</b><span>${mem.feedBad === 'teams'
+      ? 'Le scorebot envoie des équipes sans nom (« CT » / « Terrorist ») : ce n’est pas ce match.'
+      : 'Le scorebot envoie une map qui n’est pas jouée dans ce match.'} Rechargez la page HLTV.</span></div>`;
   }
+  const bank = Number(settings.bank) || 0;
+  if (mem.bets?.length) {
+    return mem.bets.map((r) => `<div class="now-box go">
+      <div class="now-head"><span class="now-tag">À JOUER</span><span class="now-mk">${esc(r.label.replace(' · prioritaire', ''))}${mem.book?.map ? ` · map ${mem.book.map}` : ''}</span></div>
+      <div class="now-sel">${esc(r.sel)}</div>
+      <div class="now-grid">
+        <div><small>Cote Stake</small><b>${dec(r.odds)}</b></div>
+        <div><small>Jouer si ≥</small><b>${dec(r.min)}</b></div>
+        <div><small>Mise</small><b>${dec(r.stake * 100, 1)} %</b>${bank ? `<em>${Math.round(r.stake * bank)} €</em>` : ''}</div>
+      </div>
+      <div class="now-note">Avantage estimé +${dec(r.ev * 100, 1)} % · ProBet ${pct(r.p)}${r.pk != null ? ` · Stake ${pct(r.pk)}` : ''}${r.locked ? ' · ligne fixée jusqu’à la fin du round' : ''}</div>
+    </div>`).join('');
+  }
+  const rows = mem.view || [];
+  let msg;
+  if (!mem.book) msg = books.size ? 'La page Stake ouverte n’est pas ce match : ouvrez ce match sur Stake.' : 'Ouvrez ce match sur Stake : ProBet lira ses cotes tout seul.';
+  else if (mem.book.desync) msg = 'Stake et HLTV n’affichent pas le même score : en attente.';
+  else if (rows.some((r) => r.status === 'stale')) msg = 'Stake recalcule ses cotes après le round…';
+  else if (m?.phase === 'live' || m?.phase === 'bomb_planted') msg = 'Round en cours : les paris se prennent pendant la pause entre les rounds.';
+  else if (rows.some((r) => r.status === 'suspended')) msg = 'Marchés suspendus chez Stake : en attente de leur réouverture.';
+  else msg = 'Rien à jouer pour l’instant. Un bip vous préviendra.';
+  return `<div class="now-box idle"><span>${msg}</span></div>`;
+}
+// Ligne d'état Stake, courte ; le détail des sources est dans l'infobulle.
+function bookLine(mem) {
+  if (!mem.book) return '';
+  const age = mem.book.age != null ? Math.round(mem.book.age / 1000) : null;
+  const fresh = age != null && age < 20;
+  const tip = `${mem.book.name} — sources : ${sourcesLine(mem.book.src).replace(/<[^>]+>/g, '')}`;
+  return `<span class="${fresh ? 'ok' : 'warn'}" title="${esc(tip)}">● Stake${mem.book.map ? ` · map ${mem.book.map}` : ''} · ${fresh ? 'à jour' : age != null ? `il y a ${age} s` : 'en attente'}</span>${
+    mem.book.mapNote ? ` · <span class="warn">${esc(mem.book.mapNote)}</span>` : ''}`;
+}
+const FULL = new Set(['value', 'suspended', 'stale', 'suspect']);
+function renderAdvice(picks, list, conf, mem, m) {
+  $('conf').innerHTML = `<span title="Confiance du modèle : qualité des données reçues et incertitude sur le niveau des équipes">Confiance <b>${pct(conf)}</b></span>`;
+  setHTML($('now'), nowHTML(mem, m));
+  if (document.activeElement?.tagName === 'INPUT' && $('advice').contains(document.activeElement)) return; // saisie d'une cote en cours
+  const rows = mem.view ?? [];
+  if (rows.some((r) => r.frozen)) $('conf').innerHTML += ' · <span class="frozen">figé pendant le round</span>';
+  setHTML($('bookState'), bookLine(mem));
   setHTML($('advice'), rows.map((r) => {
-    const go = r.status === 'play' || r.status === 'value';
     const frozen = r.frozen && Math.abs((r.now ?? r.p) - r.p) >= 0.03
       ? `<div class="adv-note">Maintenant ${pct(r.now)} : le conseil est figé jusqu'à la fin du round</div>` : '';
-    return `<li class="adv s-${r.status}${go ? ' go' : ''}">
+    if (!FULL.has(r.status)) {
+      // Rien à faire sur ce marché : une ligne, l'explication au survol.
+      return `<li class="adv compact s-${r.status}" title="${esc(adviceText(r).replace(/<[^>]+>/g, ''))}">
+        <span class="adv-mk">${esc(r.label.replace(' · prioritaire', ''))}</span>
+        <span class="adv-sel">${r.id ? `${esc(r.sel)} <small>${pct(r.p)}</small>` : ''}</span>
+        <span class="adv-tag">${TAGS[r.status]}</span></li>`;
+    }
+    return `<li class="adv s-${r.status}${r.status === 'value' ? ' go' : ''}">
       <div class="adv-top"><span class="adv-mk">${esc(r.label)}</span><span class="adv-tag">${TAGS[r.status]}</span></div>
       ${r.id ? `<div class="adv-line"><span class="adv-sel">${esc(r.sel)}</span><span class="adv-p">${pct(r.p)}</span></div>` : ''}
-      <div class="adv-how">${adviceText(r)}</div>${mixNote(r)}${frozen}${r.locked && r.status === 'value' ? '<div class="adv-note">Ligne fixée jusqu’à la fin du round</div>' : ''}
+      <div class="adv-how">${adviceText(r)}</div>${mixNote(r)}${frozen}
       ${r.id ? `<div class="adv-odds">${oddsCell(r.id, `${r.sel} — ${r.label}`, mem)}</div>` : ''}
     </li>`;
   }).join(''));
@@ -805,6 +866,13 @@ function process(id, src) {
   mem.feedBad = feedProblem(src.scoreboard, src.meta);
   mem.advice ??= {};
   mem.rows = mem.feedBad ? [] : buildAdvice(mem.advice, { list, picks, odds, minEdge: (settings.edge || 4) / 100, round: res.round });
+  // Tableau tel qu'affiché (cote Stake ouverte, fraîche, cohérente) : sert au bandeau « À jouer »,
+  // aux pastilles des matchs et au bip, pour tous les matchs suivis, affichés ou non.
+  mem.view = mem.feedBad ? [] : bookStatus(mem.rows, mem, src.matchId);
+  mem.bets = mem.view.filter((r) => r.status === 'value');
+  alertNew(mem.view, mem);
+  const sig = mem.bets.map((r) => r.id).join();
+  if (sig !== mem.betSig) { mem.betSig = sig; renderChips(); }
   if (src.matchId && src.matchId !== 'demo' && !mem.feedBad) {
     const jkey = mapKeyOf(src.matchId, m.map || key);
     const mk = mem.live?.['map:A']?.auto ? marketProb('map:A', odds) : null;
@@ -822,6 +890,8 @@ function process(id, src) {
 
 function render() {
   const src = sources.get(selected);
+  $('stepHltv').classList.toggle('done', sources.size > 0);
+  $('stepStake').classList.toggle('done', books.size > 0);
   if (!src) {
     $('main').hidden = true; $('empty').hidden = false;
     status('idle', 'Aucune page de match HLTV ouverte');
@@ -847,7 +917,7 @@ function render() {
   $('facts').innerHTML = facts(m, res, src).map((f) => `<li>${esc(f)}</li>`).join('');
   renderFeed(src);
   renderPre(m, src);
-  renderAdvice(picks, list, conf, mem);
+  renderAdvice(picks, list, conf, mem, m);
   renderMarkets(list, mem);
 }
 
@@ -859,6 +929,7 @@ $('btnSettings').addEventListener('click', () => {
   $('setOdds2').value = settings.odds2 ? dec(settings.odds2) : '';
   $('setEdge').value = settings.edge ?? 4;
   $('setSound').checked = settings.sound !== false;
+  $('setTheme').value = settings.theme || 'auto';
   renderJournal();
   $('settings').showModal();
 });
@@ -869,6 +940,8 @@ $('settings').addEventListener('close', () => {
   settings.odds2 = num('setOdds2');
   settings.edge = Math.max(1, Math.min(20, num('setEdge') ?? 4));
   settings.sound = $('setSound').checked;
+  settings.theme = $('setTheme').value;
+  applyTheme();
   saveSettings();
   render();
 });
@@ -964,6 +1037,7 @@ async function settlePending() {
 // ---------- Démarrage ----------
 
 await loadSettings();
+applyTheme();
 await loadLinks();
 await loadJournal();
 settlePending();

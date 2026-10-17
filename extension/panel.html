@@ -13,17 +13,24 @@
   </header>
 
   <div class="source">
-    <select id="matchSelect" aria-label="Match suivi"></select>
+    <nav id="matchChips" class="chips" aria-label="Matchs suivis"></nav>
+    <select id="matchSelect" aria-label="Match suivi" hidden></select>
     <div id="status" class="status idle"><i></i><span>Recherche d'une page HLTV…</span></div>
   </div>
 
   <section id="empty" class="empty">
-    <p><b>Ouvrez la page d'un match HLTV</b> (en direct) dans un onglet : ProBet la lit automatiquement.</p>
-    <p class="hint">Ex. https://www.hltv.org/matches/2398729/furia-vs-mouz-…</p>
-    <button id="btnDemo">Essayer avec un match simulé</button>
+    <h2>Pour commencer</h2>
+    <ol class="steps">
+      <li id="stepHltv"><i></i><div><b>Ouvrez un match en direct sur HLTV</b><span>Page du match, ex. hltv.org/matches/2398729/… ProBet la lit toute seule.</span></div></li>
+      <li id="stepStake"><i></i><div><b>Ouvrez le même match sur Stake</b><span>Dans un autre onglet. ProBet le reconnaît tout seul et lit toutes ses cotes.</span></div></li>
+      <li><i></i><div><b>Gardez ce panneau ouvert</b><span>Le pari à jouer s'affiche en haut, avec un bip, pendant la pause entre les rounds.</span></div></li>
+    </ol>
+    <p class="hint">Plusieurs matchs peuvent être suivis en même temps : un onglet HLTV (et Stake) par match.</p>
+    <button id="btnDemo">Voir un match simulé</button>
   </section>
 
   <main id="main" hidden>
+
     <section class="board">
       <div class="team a">
         <div class="tname"><span id="nameA"></span><em id="sideA" class="side"></em></div>
@@ -41,20 +48,21 @@
       </div>
     </section>
 
+    <section id="now" class="now" aria-live="polite"></section>
+
     <section class="card">
-      <header><h2>Que jouer ?</h2><span id="conf" class="conf"></span></header>
+      <header><h2>Tous les marchés du moment</h2><span id="conf" class="conf"></span></header>
       <div id="bookState" class="bookstate"></div>
       <div id="linkBar" class="linkbar" hidden><span></span><button type="button" id="linkCancel" class="ghost">Fermer</button></div>
       <ol id="advice"></ol>
       <details class="howto">
-        <summary>Comment parier avec ProBet</summary>
+        <summary>Comment lire ce tableau</summary>
         <ol>
-          <li><b>À JOUER</b> : ouvrez ce marché chez votre bookmaker. Si sa cote est <b>au moins égale à la cote minimale</b> affichée, le pari est rentable à long terme ; sinon, ne jouez pas.</li>
-          <li><b>Cotes automatiques (Stake)</b> : ouvrez simplement le match sur Stake dans un autre onglet. ProBet le reconnaît tout seul (noms des équipes) et affiche la cote Stake de chaque ligne, mise à jour en direct, avec le conseil. Rien à cliquer. Les marchés suspendus par Stake s’affichent « suspendu ».</li>
-          <li><b>Autre bookmaker</b> : cliquez sur 🔗 à côté d’une ligne, puis sur la cote correspondante dans la page du bookmaker (le clic n’ajoute rien à votre coupon) ; elle se met ensuite à jour toute seule. Sinon, tapez la cote à la main.</li>
-          <li><b>PAS DE PARI</b> : trop incertain ou cote trop basse. Ne pas parier fait partie de la méthode.</li>
-          <li>Mises : petites et fixes (1 à 2 % de votre bankroll), ou celle indiquée quand vous avez saisi la cote. Les paris « Vainqueur de la map » et « Handicap » sur la même équipe gagnent ou perdent ensemble : n'en jouez qu'un.</li>
-          <li>Vérifiez toujours le score chez le bookmaker : HLTV a quelques secondes de retard.</li>
+          <li><b>À JOUER</b> : la cote Stake est assez haute pour que le pari soit rentable à long terme. Jouez <b>exactement cette ligne</b>, à la mise indiquée, tant que la cote Stake reste au-dessus du minimum affiché.</li>
+          <li><b>ATTENDRE</b> : Stake a suspendu le marché ou n'a pas encore recalculé sa cote après le round. Le minimum à exiger est affiché.</li>
+          <li><b>PAS DE PARI</b>, <b>FAVORI</b>, <b>PAS SUR STAKE</b> : rien à jouer sur ce marché. Ne pas parier fait partie de la méthode.</li>
+          <li><b>À VÉRIFIER</b> : la cote Stake est très loin du calcul, souvent un score ou une map en décalage. Ne jouez pas.</li>
+          <li>Les paris d'une même équipe (map, handicap, match) gagnent ou perdent ensemble : la mise totale conseillée est plafonnée.</li>
         </ol>
       </details>
     </section>
@@ -72,6 +80,8 @@
       <div id="extra" class="extra"></div>
     </section>
 
+    <details class="more">
+      <summary>Plus de détails : avant-match, analyse, toutes les lignes</summary>
     <section class="card">
       <details id="preBox">
         <summary><h2>Avant-match</h2><span id="preSummary"></span></summary>
@@ -87,13 +97,14 @@
 
     <section class="card">
       <details id="marketsBox">
-        <summary><h2>Tous les marchés</h2><span>entrez vos cotes pour détecter la value</span></summary>
+        <summary><h2>Tous les marchés</h2><span>probabilités, cotes Stake et avantage de chaque ligne</span></summary>
         <table>
           <thead><tr><th>Sélection</th><th>Proba</th><th>Juste</th><th>Votre cote</th><th>EV</th></tr></thead>
           <tbody id="marketRows"></tbody>
         </table>
       </details>
     </section>
+    </details>
   </main>
 
   <dialog id="settings">
@@ -107,6 +118,11 @@
       <p class="hint">Par défaut, ProBet utilise les cotes des bookmakers affichées sur la page HLTV pour estimer la force des équipes avant les premiers rounds. Saisissez vos propres cotes pour les remplacer.</p>
       <label>Avantage minimum pour un pari VALUE (%) <input id="setEdge" type="number" min="1" max="20" step="0.5" value="4"></label>
       <label class="check"><input id="setSound" type="checkbox" checked> Signal sonore à chaque nouveau pari « À JOUER »</label>
+      <label>Thème <select id="setTheme">
+        <option value="auto">automatique (comme Windows)</option>
+        <option value="dark">sombre</option>
+        <option value="light">clair</option>
+      </select></label>
       <h3>Journal des matchs</h3>
       <p class="hint">ProBet enregistre sur votre PC, round par round, ses prévisions, celles de HLTV, les résultats et les paris proposés. Exportez le journal pour mesurer et améliorer la justesse du modèle.</p>
       <p id="journalSummary" class="journal"></p>

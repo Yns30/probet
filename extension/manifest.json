@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProBet CS2",
-  "version": "3.9.1",
+  "version": "4.1.0",
   "description": "Assistant de paris CS2 en direct : lit la page de match HLTV ouverte, calcule les probabilités en temps réel et récupère les cotes Stake automatiquement.",
   "minimum_chrome_version": "116",
   "permissions": [

@@ -2,7 +2,7 @@ import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, opp
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
-import { toMatch, describeLog, feedProblem } from './hltv.js';
+import { toMatch, describeLog, feedProblem, cleanMaps } from './hltv.js';
 import { createDemoMatch } from './demo.js';
 import { newJournal, record, backfill, logPicks, summarize, mergeDuplicates, mapKeyOf, pendingMatches, trackNext, dropForeign, markTaken } from './journal.js';
 
@@ -1061,11 +1061,11 @@ async function settlePending() {
       if (!r.ok) continue;
       const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
       const int = (el) => { const n = parseInt(el?.textContent?.trim(), 10); return Number.isInteger(n) ? n : null; };
-      const maps = [...doc.querySelectorAll('.mapholder')].map((h) => ({
+      const maps = cleanMaps([...doc.querySelectorAll('.mapholder')].map((h) => ({
         name: h.querySelector('.mapname')?.textContent?.trim(),
         s1: int(h.querySelector('.results-left .results-team-score')),
         s2: int(h.querySelector('.results-right .results-team-score')),
-      }));
+      })));
       backfill(journal, id, maps);
       for (const [k, e] of Object.entries(journal.maps)) if (String(e.matchId) === id) journalDirty.add(k);
       saveJournal();

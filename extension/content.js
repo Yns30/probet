@@ -1,7 +1,7 @@
 // Script de contenu (page de match HLTV) : rassemble les données live et les
 // méta-données de la page, puis les envoie au panneau ProBet.
 (async () => {
-  const { extractEvents, describeLog } = await import(chrome.runtime.getURL('hltv.js'));
+  const { extractEvents, describeLog, cleanMaps } = await import(chrome.runtime.getURL('hltv.js'));
 
   const state = {
     url: location.href,
@@ -177,12 +177,13 @@
     const lineups = document.querySelectorAll('.lineup');
     const rank = (i) => num(txt(lineups[i]?.querySelector('.hltv-ranking')));
     const vrs = [...document.querySelectorAll('.vrs-forecast-left-numbers .vrs-forecast-points')].map((e) => num(txt(e)));
-    const maps = [...document.querySelectorAll('.mapholder')].map((h) => ({
+    const format0 = txt(document.querySelector('.preformatted-text'));
+    const maps = cleanMaps([...document.querySelectorAll('.mapholder')].map((h) => ({
       name: txt(h.querySelector('.mapname')),
       s1: int(txt(h.querySelector('.results-left .results-team-score'))),
       s2: int(txt(h.querySelector('.results-right .results-team-score'))),
       halves: halves(h),
-    }));
+    })), Number((/best of (\d)/i.exec(format0 || '') || [])[1]) || null);
     const odds = [...document.querySelectorAll('tr.provider:not(.hidden)')]
       .map((tr) => [...tr.querySelectorAll('.odds-cell')]
         .map((c) => parseFloat(txt(c)?.replace(',', '.')))

@@ -175,6 +175,18 @@ const same = (x, y) => {
   return Boolean(a && b && (a === b || (Math.min(a.length, b.length) >= 3 && (a.includes(b) || b.includes(a)))));
 };
 
+// Maps du match lues sur la page. Depuis fin 2026, HLTV ajoute d'autres blocs « mapholder »
+// (taux de victoire par map : « Mirage - 58% », répétés) avant les vraies maps : ProBet se
+// croyait alors sur la « map 10 ». On ne garde que les vrais noms de map, et au plus `bestOf`
+// (les derniers : les vraies maps viennent après ces blocs).
+export function cleanMaps(maps, bestOf) {
+  const ok = (maps || []).filter((mp) => {
+    const n = String(mp?.name || '').trim();
+    return n && !/%|\s-\s|\d{2,}/.test(n) && n.length <= 20;
+  });
+  return bestOf && ok.length > bestOf ? ok.slice(-bestOf) : ok;
+}
+
 export function bestOfFrom(text) {
   const m = /best of (\d)/i.exec(text || '');
   return m ? Number(m[1]) : null;
@@ -214,7 +226,7 @@ export function feedProblem(sb, meta = {}) {
   if (GENERIC.test(String(sb.ctTeamName || '').trim()) && GENERIC.test(String(sb.terroristTeamName || '').trim())) return 'teams';
   // Nom simplifié (toutes les maps, y compris celles hors du pool connu du modèle, comme Cache).
   const key = (n) => { const k = String(n || '').toLowerCase().replace(/^de_/, '').replace(/[^a-z0-9]/g, ''); return k === 'dust' ? 'dust2' : k; };
-  const names = (meta.maps || []).map((mp) => key(mp.name)).filter((k) => k && k !== 'tba');
+  const names = cleanMaps(meta.maps, meta.bestOf).map((mp) => key(mp.name)).filter((k) => k && k !== 'tba');
   if (sb.mapName && names.length > 0 && names.length >= (meta.bestOf || 1) && !names.includes(key(sb.mapName))) return 'map';
   return null;
 }
@@ -444,6 +456,7 @@ export function toMatch(sb, meta = {}, mem = {}) {
     buyA = predictBuy(pA); buyB = predictBuy(pB);
   }
 
+  meta = { ...meta, maps: cleanMaps(meta.maps, meta.bestOf) }; // anciennes pages / journaux
   const { mapsA, mapsB, mapNumber, unknown: mapsUnknown } = seriesState(meta.maps, sb.mapName);
   const bestOf = meta.bestOf || 1;
   const pre = pagePrior(meta, sb.mapName, bestOf);

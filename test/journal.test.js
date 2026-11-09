@@ -174,3 +174,15 @@ test('paris réellement joués (bouton « Je l’ai joué ») : bilan à part', 
   assert.ok(Math.abs(t.units - (1.1 + 0.8)) < 1e-9);
   assert.ok(Math.abs(t.staked - (0.022 + 0.008)) < 1e-9);
 });
+
+test('cote Stake de la map relevée dès qu’elle est recalculée pendant la pause', () => {
+  const j = newJournal();
+  const m = { map: 'nuke', mapNumber: 1, bestOf: 1, names: ['A', 'B'], rounds: [], phase: 'live', aliveA: 5, aliveB: 5, scoreA: 3, scoreB: 2, round: 6 };
+  const res = { round: 6, pRound: 0.5, pMap: 0.6 };
+  record(j, { key: 'k', matchId: '1', m, res });
+  assert.equal(j.maps.k.rounds[6].start.mk, null);
+  record(j, { key: 'k', matchId: '1', m, res, mk: 0.58 });
+  assert.equal(j.maps.k.rounds[6].start.mk, 0.58);
+  record(j, { key: 'k', matchId: '1', m: { ...m, aliveB: 4 }, res, mk: 0.7 });
+  assert.equal(j.maps.k.rounds[6].start.mk, 0.58, 'pas après le premier kill');
+});

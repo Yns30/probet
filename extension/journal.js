@@ -63,6 +63,9 @@ export function record(j, { key, matchId, m, res, hltv, scoreboard, meta, mk = n
       hl, mk: r3(mk), sb: slimBoard(scoreboard),
     };
   }
+  // Cote Stake de la map pas encore recalculée au début du round : relevée dès qu'elle l'est,
+  // tant que le round n'a pas vraiment commencé (5 contre 5, pas de bombe).
+  if (R.start && R.start.mk == null && Number.isFinite(mk) && m.aliveA === 5 && m.aliveB === 5 && !m.bombPlanted) R.start.mk = r3(mk);
   // Pendant le round : un relevé à chaque changement de situation (kill, bombe).
   const sig = `${m.aliveA}-${m.aliveB}-${m.bombPlanted ? 1 : 0}`;
   if (R.sig !== sig && (R.snaps?.length ?? 0) < MAX_SNAPS) {

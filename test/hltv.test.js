@@ -347,3 +347,16 @@ test('flux du scorebot sans rapport avec le match de la page (cas réel FaZe - S
   // Maps pas encore toutes connues (décisive « TBA ») : pas de conclusion.
   assert.equal(feedProblem({ mapName: 'de_inferno', ctTeamName: 'FaZe', terroristTeamName: 'Sangal' }, { bestOf: 3, maps: [{ name: 'Dust2' }, { name: 'TBA' }] }), null);
 });
+
+test('page HLTV fin 2026 : blocs « Mirage - 58% » avant les vraies maps (cas réel aimclub - Alliance)', async () => {
+  const { cleanMaps, seriesState } = await import('../extension/hltv.js');
+  const raw = ['Mirage - 58%', 'Inferno - 80%', 'Anubis - 65%', 'Dust2 - 55%', 'Inferno - 80%', 'Anubis - 65%', 'Dust2 - 55%', 'Inferno - 80%', 'Mirage - 58%']
+    .map((name) => ({ name, s1: null, s2: null }))
+    .concat([{ name: 'Inferno', s1: 7, s2: 13 }, { name: 'Mirage', s1: null, s2: null }, { name: 'Anubis', s1: null, s2: null }]);
+  const maps = cleanMaps(raw, 3);
+  assert.deepEqual(maps.map((m) => m.name), ['Inferno', 'Mirage', 'Anubis']);
+  assert.equal(seriesState(maps, 'de_mirage').mapNumber, 2); // et non « map 11 »
+  assert.equal(seriesState(maps, 'de_mirage').mapsB, 1);
+  assert.deepEqual(cleanMaps(raw).map((m) => m.name), ['Inferno', 'Mirage', 'Anubis']);
+  assert.deepEqual(cleanMaps([{ name: 'Dust2' }, { name: 'TBA' }], 3).map((m) => m.name), ['Dust2', 'TBA']);
+});

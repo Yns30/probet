@@ -310,10 +310,20 @@
     return out;
   };
   window.fetch = async function (...args) {
+    // Requête passée sous forme d'objet Request (cas de la liste des matchs) : copie lue pour le
+    // diagnostic, avant que le site ne la consomme.
+    const reqCopy = diag && args[0] instanceof Request && GQL.test(args[0].url) ? args[0].clone() : null;
     const res = await origFetch.apply(this, args);
     try {
       const req = args[0];
       const url = String(req?.url || req || '');
+      if (reqCopy) reqCopy.text().then((t) => { if (t) recQuery(t); }, () => {});
+      // Requête GET (requête enregistrée côté serveur, paramètres dans l'adresse).
+      if (diag && GQL.test(url) && url.includes('?') && diagSafe(url)) rec('gqlOut', `GET ${url}`, 20000, true);
+      const body = args[1]?.body;
+      if (diag && GQL.test(url) && body != null && typeof body !== 'string') {
+        try { new Response(body).text().then(recQuery, () => {}); } catch { /* ignore */ }
+      }
       if (/\/_api\//.test(url) && /json/.test(res.headers.get('content-type') || '')) {
         if (GQL.test(url) && typeof args[1]?.body === 'string') recQuery(args[1].body);
         if (GQL.test(url)) res.clone().text().then((t) => { if (/odds|market|fixture/i.test(t)) rec('gqlIn', t, 4000); }, () => {});

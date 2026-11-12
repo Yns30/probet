@@ -1,6 +1,7 @@
 import { analyze, markets, confidence, evaluateBet, blendMarket, marketProb, oppositeOf, MODEL_WEIGHT } from './engine.js';
 import { stablePicks } from './picks.js';
 import { buildAdvice } from './advice.js';
+import { testHltvPage, testScorebot, testStake } from './direct.js';
 import { findFixture, bookOdds, bookLines, pickMapNumber, bookClosure } from './books.js';
 import { toMatch, describeLog, feedProblem, cleanMaps } from './hltv.js';
 import { createDemoMatch } from './demo.js';
@@ -792,6 +793,28 @@ $('advice').addEventListener('change', onOddsInput);
 for (const el of [$('marketRows'), $('advice')]) for (const t of ['pointerdown', 'click']) el.addEventListener(t, onLinkClick);
 $('linkCancel').addEventListener('click', () => endPicking(''));
 $('diagBtn').addEventListener('click', startDiag);
+// Test du mode sans onglet : HLTV (page des matchs, flux du direct) et Stake joignables
+// directement depuis l'extension ? Résultat affiché et téléchargé.
+$('directTestBtn').addEventListener('click', async () => {
+  if (!hasChrome) return;
+  $('directTestBtn').disabled = true;
+  showDiag('Test en cours (15 s environ)…');
+  const page = await testHltvPage();
+  const open = [...sources.values()].find((src) => src.scoreboard && src.matchId)?.matchId;
+  const matchId = open || page.live?.[0]?.id;
+  const bot = matchId ? await testScorebot(matchId) : { error: 'aucun match en direct trouvé' };
+  const stakeHost = [...books.values()][0]?.host || 'stake.com';
+  const stake = await testStake(stakeHost);
+  const mark = (ok) => (ok ? '✓' : '✗');
+  showDiag(`HLTV page des matchs ${mark(page.ok)}${page.live ? ` (${page.live.length} en direct)` : ''} · HLTV direct ${mark(bot.scoreboard > 0)}${
+    bot.scoreboard ? ` (${bot.scoreboard} mises à jour)` : bot.error ? ` (${bot.error})` : ''} · Stake ${mark(stake.ok)}. Fichier téléchargé : envoyez-le.`);
+  const file = { probet: chrome.runtime.getManifest().version, at: new Date().toISOString(), hltvPage: page, scorebot: bot, stake };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }));
+  a.download = `probet-test-sans-onglet-${Date.now()}.json`;
+  document.body.append(a); a.click(); a.remove();
+  $('directTestBtn').disabled = false;
+});
 // Diagnostic HLTV : chaque page de match HLTV ouverte décrit sa connexion au scorebot.
 $('diagHltvBtn').addEventListener('click', async () => {
   if (!hasChrome) return;

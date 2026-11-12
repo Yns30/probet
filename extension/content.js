@@ -257,6 +257,26 @@
     if (msg?.type === 'probet:get') {
       readMeta();
       reply(state);
+    } else if (msg?.type === 'probet:diag-hltv') {
+      // Connexion de la page au scorebot (voir hook.js) + attributs du tableau live.
+      const onData = (e) => {
+        if (e.source !== window || !e.data?.__probetDiagData) return;
+        window.removeEventListener('message', onData);
+        clearTimeout(timer);
+        reply(build(e.data.__probetDiagData));
+      };
+      const attrs = (el) => (el ? Object.fromEntries([...el.attributes].map((a) => [a.name, a.value.slice(0, 300)])) : null);
+      const build = (net) => ({
+        url: location.href, matchId: state.matchId, frames: state.frames, lastFrameAt: state.lastFrameAt, net,
+        scoreboardEl: attrs(document.querySelector('#scoreboardElement')),
+        scorebotEls: [...document.querySelectorAll('[data-scorebot-url], [data-scorebot-id], [class*="scorebot"]')].slice(0, 8).map(attrs),
+        mapholders: [...document.querySelectorAll('.mapholder')].slice(0, 20).map((h) => ({ cls: h.parentElement?.className?.slice(0, 80), name: txt(h.querySelector('.mapname')) })),
+        sample: state.scoreboard ? JSON.stringify(state.scoreboard).slice(0, 3000) : null,
+      });
+      const timer = setTimeout(() => { window.removeEventListener('message', onData); reply(build(null)); }, 1500);
+      window.addEventListener('message', onData);
+      window.postMessage({ __probetDiagGet: true }, location.origin);
+      return true; // réponse asynchrone
     }
   });
 

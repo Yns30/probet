@@ -226,11 +226,21 @@
   // Enregistrement de diagnostic (bouton « Diagnostic Stake » du panneau), 45 s.
   let diag = null;
   const clip = (t, n = 6000) => (t.length > n ? `${t.slice(0, n)}…[${t.length} car.]` : t);
-  function rec(kind, text, n) {
+  function rec(kind, text, n, checked = false) {
     if (!diag || Date.now() > diag.until || typeof text !== 'string') return;
     diag.count[kind] = (diag.count[kind] || 0) + 1;
-    if (!diagSafe(text)) { diag.skipped[kind] = (diag.skipped[kind] || 0) + 1; return; }
+    if (!checked && !diagSafe(text)) { diag.skipped[kind] = (diag.skipped[kind] || 0) + 1; return; }
     if ((diag[kind] ??= []).length < 40) diag[kind].push({ t: Date.now() - diag.start, data: clip(text, n) });
+  }
+  // Requête GraphQL envoyée par le site : le texte de la requête ne contient aucune donnée du
+  // compte ; les variables sont masquées si elles en contiennent.
+  function recQuery(body) {
+    if (!diag) return;
+    try {
+      const o = JSON.parse(body);
+      const v = JSON.stringify(o.variables ?? null);
+      rec('gqlOut', JSON.stringify({ operationName: o.operationName, query: o.query, variables: diagSafe(v) ? o.variables : '[masqué]' }), 20000, true);
+    } catch { rec('gqlOut', body, 3000); }
   }
   function diagSummary() {
     const byMarket = {};
@@ -305,7 +315,7 @@
       const req = args[0];
       const url = String(req?.url || req || '');
       if (/\/_api\//.test(url) && /json/.test(res.headers.get('content-type') || '')) {
-        if (GQL.test(url) && typeof args[1]?.body === 'string') rec('gqlOut', args[1].body, 3000);
+        if (GQL.test(url) && typeof args[1]?.body === 'string') recQuery(args[1].body);
         if (GQL.test(url)) res.clone().text().then((t) => { if (/odds|market|fixture/i.test(t)) rec('gqlIn', t, 4000); }, () => {});
         if (GQL.test(url) && !(req instanceof Request) && typeof args[1]?.body === 'string') {
           gqlHeaders = pickHeaders(args[1].headers);

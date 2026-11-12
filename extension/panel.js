@@ -792,6 +792,23 @@ $('advice').addEventListener('change', onOddsInput);
 for (const el of [$('marketRows'), $('advice')]) for (const t of ['pointerdown', 'click']) el.addEventListener(t, onLinkClick);
 $('linkCancel').addEventListener('click', () => endPicking(''));
 $('diagBtn').addEventListener('click', startDiag);
+// Diagnostic HLTV : chaque page de match HLTV ouverte décrit sa connexion au scorebot.
+$('diagHltvBtn').addEventListener('click', async () => {
+  if (!hasChrome) return;
+  const tabs = await chrome.tabs.query({ url: 'https://www.hltv.org/matches/*' }).catch(() => []);
+  if (!tabs.length) { showDiag('Ouvrez d’abord la page d’un match HLTV en direct, puis recliquez.'); return; }
+  const pages = [];
+  for (const t of tabs) {
+    const r = await chrome.tabs.sendMessage(t.id, { type: 'probet:diag-hltv' }).catch(() => null);
+    pages.push(r || { url: t.url, error: 'pas de réponse : rechargez la page HLTV (F5) puis réessayez' });
+  }
+  const file = { probet: chrome.runtime.getManifest().version, at: new Date().toISOString(), hltv: pages };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }));
+  a.download = `probet-diagnostic-hltv-${Date.now()}.json`;
+  document.body.append(a); a.click(); a.remove();
+  showDiag(`Diagnostic HLTV téléchargé ✓ (${pages.length} page${pages.length > 1 ? 's' : ''}) : envoyez le fichier (dossier Téléchargements).`);
+});
 $('version').textContent = `ProBet v${hasChrome ? chrome.runtime.getManifest().version : 'démo'}`;
 
 function renderPre(m, src) {

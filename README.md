@@ -186,6 +186,9 @@ Le score utilisé est l'écart quadratique moyen (score de Brier) : 0,25 corresp
 
 ## En cas de problème
 
+- **🩺 Diagnostic Stake** : enregistre 45 s de ce que reçoit la page Stake ouverte (sans données du compte) et télécharge un fichier. Pour la **liste des matchs** de Stake : cliquez sur le bouton depuis la page Counter-Strike de Stake, puis, dans les 45 s, cliquez sur un autre sport et revenez sur Counter-Strike (le site recharge alors la liste et la requête est enregistrée).
+- **🩺 Diagnostic HLTV** : sur une page de match HLTV en direct, relève tout de suite comment la page se connecte au direct (adresses, messages du scorebot) et télécharge un fichier.
+
 - **« Pas de nouvelle donnée » sur un match en arrière-plan, qui repart quand on clique sur l'onglet** : Chrome met en veille les onglets cachés pour économiser la mémoire et la batterie. Dans Chrome, ouvrez `chrome://settings/performance` et, sous **« Toujours garder ces sites actifs »**, ajoutez `hltv.org` et `stake.com`. ProBet demande aussi lui-même à Chrome de ne pas décharger ces onglets, et redemande les données de chaque match toutes les 3 s. Suivre plusieurs matchs en même temps fonctionne alors sans cliquer.
 
 - **« En attente des données live »** : le match n'a peut-être pas commencé. Sinon, rechargez la page HLTV : l'extension doit être chargée avant le scoreboard.
